@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveOAuthDir, resolveStateDir } from "../config/paths.js";
 import {
@@ -204,10 +205,10 @@ export async function noteStateIntegrity(
   const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId, env, homedir);
   const storePath = resolveStorePath(cfg.session?.store, { agentId });
   const storeDir = path.dirname(storePath);
+  const absoluteStorePath = path.resolve(storePath);
   const displayStateDir = shortenHomePath(stateDir);
   const displayOauthDir = shortenHomePath(oauthDir);
   const displaySessionsDir = shortenHomePath(sessionsDir);
-  const displayStorePath = shortenHomePath(storePath);
   const displayStoreDir = shortenHomePath(storeDir);
   const displayConfigPath = configPath ? shortenHomePath(configPath) : undefined;
   const requireOAuthDir = shouldRequireOAuthDir(cfg, env);
@@ -413,8 +414,8 @@ export async function noteStateIntegrity(
       warnings.push(
         [
           `- ${missing.length}/${recent.length} recent sessions are missing transcripts.`,
-          `  Verify sessions in store: openclaw sessions --store "${displayStorePath}"`,
-          `  Preview cleanup impact: openclaw sessions cleanup --store "${displayStorePath}" --dry-run`,
+          `  Verify sessions in store: ${formatCliCommand(`openclaw sessions --store "${absoluteStorePath}"`)}`,
+          `  Preview cleanup impact: ${formatCliCommand(`openclaw sessions cleanup --store "${absoluteStorePath}" --dry-run`)}`,
         ].join("\n"),
       );
     }
