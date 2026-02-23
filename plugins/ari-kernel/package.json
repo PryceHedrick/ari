@@ -1,0 +1,21 @@
+{
+  "name": "@ari/kernel",
+  "version": "1.0.0",
+  "description": "ARI security boundary — 42-pattern injection detection + SHA-256 audit chain",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.26"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "hooks": {
+      "before_message": "./src/sanitizer.ts"
+    }
+  }
+}

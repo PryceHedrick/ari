@@ -1,4 +1,51 @@
-# Repository Guidelines
+# ARI — OpenClaw Fork Developer Rules
+
+> **Repo:** https://github.com/PryceHedrick/ari
+> This is Pryce Hedrick's personal ARI distro built on OpenClaw.
+> Upstream: https://github.com/openclaw/openclaw
+
+## ARI-Specific Rules
+
+- **plugins/** is ARI territory. Never touch `extensions/` (upstream only).
+- Sync upstream: `git merge upstream/main -- extensions/ packages/ src/`
+- All 13 ARI plugins live in `plugins/ari-*/`; each exports a default OpenClaw plugin object.
+- Discord is the SOLE channel — no Telegram anywhere in ARI code or config.
+- ARI pronouns: **she/her**. Business name: **Pryceless Solutions** (NOT Priceless).
+- Gateway port: **3141** (loopback only — never 0.0.0.0)
+- Workspace templates live in `.openclaw-workspace-templates/` (copy to `~/.openclaw/workspace/` on setup)
+
+## ARI Plugin Registry (13 plugins)
+
+| Plugin | Status | Purpose |
+|--------|--------|---------|
+| ari-kernel | Phase 3 | 42-pattern injection detection + SHA-256 audit chain |
+| ari-cognitive | Phase 3 | LOGOS/ETHOS/PATHOS system prompt builder |
+| ari-governance | Phase 3 (deferred) | Council of 15 constitutional governance |
+| ari-agents | Phase 3 (deferred) | SwarmPods multi-agent coordination |
+| ari-ai | Phase 3 | ValueScorer + OpenRouter routing |
+| ari-market | Phase 3 | Crypto/stock/Pokemon price monitoring |
+| ari-briefings | Phase 3 | Morning/evening/weekly briefings |
+| ari-memory | Phase 3 | SQLite WAL knowledge base |
+| ari-scheduler | Phase 3 | 18-task cron schedule (3 ET windows) |
+| ari-autonomous | Phase 3 (deferred) | Self-healing + autonomy loop |
+| ari-notion | Phase 3 (deferred) | Journal and notes integration |
+| ari-voice | Phase 3 (deferred) | ElevenLabs TTS voice briefings |
+| ari-workspace | Phase 3 | Workspace file loader (SOUL/USER/HEARTBEAT) |
+
+## Phase 2 Gate (Bootstrap)
+
+- `openclaw gateway start` → `curl 127.0.0.1:3141/health` returns 200
+- All 13 `plugins/ari-*/index.ts` export valid plugin objects
+
+## Phase 3 Gate (Core Plugins)
+
+- 06:30 briefing path deterministic from 05:00 stored payload
+- Model routing obeys ModelExecutionPolicy
+- `npm test` passes 80%+ coverage
+
+---
+
+# Original OpenClaw Repository Guidelines (preserved for upstream sync)
 
 - Repo: https://github.com/openclaw/openclaw
 - GitHub issues/comments/PR comments: use literal multiline strings or `-F - <<'EOF'` (or $'...') for real newlines; never embed "\\n".
