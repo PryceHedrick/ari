@@ -1526,6 +1526,14 @@ async function handleOpsDashboardPublishCommand(
   const webhookConfigured = payload.webhookConfigured === true;
   const gateApplied = payload.gateApplied === true;
   const gatePassed = payload.gatePassed === true;
+  const snapshot = asRecord(payload.snapshot);
+  const queues = asRecord(snapshot.queues);
+  const p1Queue = asRecord(queues.p1);
+  const p2Queue = asRecord(queues.p2);
+  const p1Holds = asRecord(p1Queue.holdReasons);
+  const p2Holds = asRecord(p2Queue.holdReasons);
+  const canary = asRecord(snapshot.canary);
+  const alerts = Array.isArray(snapshot.alerts) ? snapshot.alerts.length : 0;
   return asReply([
     "ARI ops dashboard publish",
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)} | force=${String(parsed.force)}`,
@@ -1534,6 +1542,8 @@ async function handleOpsDashboardPublishCommand(
     `webhookConfigured: ${String(webhookConfigured)}`,
     `published: ${String(published)}`,
     `status: ${formatNumber(payload.publishStatus, 0)} error: ${asTrimmedString(payload.publishError) ?? "none"}`,
+    `alerts=${formatNumber(alerts, 0)} canary(sent/notified/failed)=${formatNumber(canary.sentRuns, 0)}/${formatNumber(canary.notifiedRuns, 0)}/${formatNumber(canary.failedRuns, 0)}`,
+    `holds p1(gov/budget/dataGap)=${formatNumber(p1Holds.governanceHold, 0)}/${formatNumber(p1Holds.budgetHold, 0)}/${formatNumber(p1Holds.dataGap, 0)} p2=${formatNumber(p2Holds.governanceHold, 0)}/${formatNumber(p2Holds.budgetHold, 0)}/${formatNumber(p2Holds.dataGap, 0)}`,
   ]);
 }
 
