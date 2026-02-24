@@ -445,6 +445,28 @@ async function handleStatusCommand(runtime: BridgeRuntimeConfig): Promise<ReplyP
   ]);
 }
 
+async function handleOpsQueuesCommand(runtime: BridgeRuntimeConfig): Promise<ReplyPayload> {
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "GET",
+    path: "/api/ops/queues/summary",
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops queue summary failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const p1 = asRecord(payload.p1);
+  const p2 = asRecord(payload.p2);
+
+  return asReply([
+    "ARI queue summary",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"}`,
+    `p1: total=${formatNumber(p1.total, 0)} pending=${formatNumber(p1.pendingApproval, 0)} approved=${formatNumber(p1.approved, 0)} rejected=${formatNumber(p1.rejected, 0)} oldestPendingMin=${formatNumber(p1.oldestPendingMinutes, 0)}`,
+    `p2: total=${formatNumber(p2.total, 0)} draft=${formatNumber(p2.draft, 0)} queued=${formatNumber(p2.queued, 0)} approved=${formatNumber(p2.approved, 0)} sent=${formatNumber(p2.sent, 0)} rejected=${formatNumber(p2.rejected, 0)} oldestDraftMin=${formatNumber(p2.oldestDraftMinutes, 0)}`,
+  ]);
+}
+
 async function handleP1RunCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -829,6 +851,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async () => handleStatusCommand(runtime),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-queues",
+    description: "Show queue backlog summary for Pipeline 1 and Pipeline 2",
+    acceptsArgs: false,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async () => handleOpsQueuesCommand(runtime),
     }),
   });
 
