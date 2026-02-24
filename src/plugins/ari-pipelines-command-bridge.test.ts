@@ -19,6 +19,8 @@ function buildRuntime(overrides?: Partial<BridgeRuntimeConfig>): BridgeRuntimeCo
       maxDelayMs: 3000,
       statusCodes: new Set([408, 429, 500]),
     },
+    mutationRetryAttempts: 1,
+    approvalRetryAttempts: 1,
     strictRouting: true,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),

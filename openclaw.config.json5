@@ -53,6 +53,8 @@
           timeoutMs: "${ARI_PIPELINES_API_TIMEOUT_MS:-20000}",
           retry: {
             attempts: "${ARI_PIPELINES_API_RETRY_ATTEMPTS:-3}",
+            mutationAttempts: "${ARI_PIPELINES_API_RETRY_MUTATION_ATTEMPTS:-1}",
+            approvalAttempts: "${ARI_PIPELINES_API_RETRY_APPROVAL_ATTEMPTS:-1}",
             minDelayMs: "${ARI_PIPELINES_API_RETRY_MIN_DELAY_MS:-350}",
             maxDelayMs: "${ARI_PIPELINES_API_RETRY_MAX_DELAY_MS:-3000}",
             statusCodes: "${ARI_PIPELINES_API_RETRY_STATUS_CODES:-408,425,429,500,502,503,504}",

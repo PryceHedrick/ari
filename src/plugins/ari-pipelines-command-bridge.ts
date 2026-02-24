@@ -17,6 +17,8 @@ export type BridgeRuntimeConfig = {
   apiToken?: string;
   timeoutMs: number;
   retry: BridgeRetryConfig;
+  mutationRetryAttempts: number;
+  approvalRetryAttempts: number;
   strictRouting: boolean;
   p1Channels: Set<string>;
   p2Channels: Set<string>;
@@ -45,6 +47,8 @@ const DEFAULT_RETRY_ATTEMPTS = 3;
 const DEFAULT_RETRY_MIN_DELAY_MS = 350;
 const DEFAULT_RETRY_MAX_DELAY_MS = 3_000;
 const DEFAULT_RETRY_STATUS_CODES = new Set<number>([408, 425, 429, 500, 502, 503, 504]);
+const DEFAULT_MUTATION_RETRY_ATTEMPTS = 1;
+const DEFAULT_APPROVAL_RETRY_ATTEMPTS = 1;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -265,6 +269,14 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
     asPositiveInt(retryConfig.attempts) ??
     asPositiveInt(readEnv("ARI_PIPELINES_API_RETRY_ATTEMPTS")) ??
     DEFAULT_RETRY_ATTEMPTS;
+  const mutationRetryAttempts =
+    asPositiveInt(retryConfig.mutationAttempts) ??
+    asPositiveInt(readEnv("ARI_PIPELINES_API_RETRY_MUTATION_ATTEMPTS")) ??
+    DEFAULT_MUTATION_RETRY_ATTEMPTS;
+  const approvalRetryAttempts =
+    asPositiveInt(retryConfig.approvalAttempts) ??
+    asPositiveInt(readEnv("ARI_PIPELINES_API_RETRY_APPROVAL_ATTEMPTS")) ??
+    DEFAULT_APPROVAL_RETRY_ATTEMPTS;
   const retryMinDelayMs =
     asNonNegativeInt(retryConfig.minDelayMs) ??
     asNonNegativeInt(readEnv("ARI_PIPELINES_API_RETRY_MIN_DELAY_MS")) ??
@@ -294,6 +306,8 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
       maxDelayMs: retryMaxDelayMs,
       statusCodes: resolvedRetryStatuses,
     },
+    mutationRetryAttempts,
+    approvalRetryAttempts,
     strictRouting,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),
@@ -308,6 +322,26 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   deriveRoutingChannelsFromConfig(api.config, resolved);
 
   return resolved;
+}
+
+function resolveRetryPolicyForRequest(params: {
+  runtime: BridgeRuntimeConfig;
+  method: HttpMethod;
+  path: string;
+}): BridgeRetryConfig {
+  if (params.method === "GET") {
+    return params.runtime.retry;
+  }
+  if (/\/approve$|\/reject$/.test(params.path)) {
+    return {
+      ...params.runtime.retry,
+      attempts: params.runtime.approvalRetryAttempts,
+    };
+  }
+  return {
+    ...params.runtime.retry,
+    attempts: params.runtime.mutationRetryAttempts,
+  };
 }
 
 export function extractCommandChannelId(ctx: PluginCommandContext): string | undefined {
@@ -393,7 +427,12 @@ async function callAriPipelinesApi(params: {
   path: string;
   body?: Record<string, unknown>;
 }): Promise<RequestResult> {
-  const attempts = Math.max(1, params.runtime.retry.attempts);
+  const retryPolicy = resolveRetryPolicyForRequest({
+    runtime: params.runtime,
+    method: params.method,
+    path: params.path,
+  });
+  const attempts = Math.max(1, retryPolicy.attempts);
   let lastResult: RequestResult | undefined;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -409,16 +448,15 @@ async function callAriPipelinesApi(params: {
 
     lastResult = result;
     const retryable =
-      attempt < attempts &&
-      (result.status ? params.runtime.retry.statusCodes.has(result.status) : true);
+      attempt < attempts && (result.status ? retryPolicy.statusCodes.has(result.status) : true);
     if (!retryable) {
       return result;
     }
 
     const delayMs = computeRetryDelayMs({
       attempt,
-      minDelayMs: params.runtime.retry.minDelayMs,
-      maxDelayMs: params.runtime.retry.maxDelayMs,
+      minDelayMs: retryPolicy.minDelayMs,
+      maxDelayMs: retryPolicy.maxDelayMs,
     });
     params.runtime.logger.warn(
       `[ari-autonomous] ${params.method} ${params.path} retry ${attempt + 1}/${attempts} in ${delayMs}ms after error: ${result.error ?? "unknown error"}`,
