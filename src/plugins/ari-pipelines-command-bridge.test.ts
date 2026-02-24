@@ -4,6 +4,7 @@ import {
   evaluateCommandAccess,
   extractCommandChannelId,
   normalizeChannelId,
+  parseOpsAlertArgs,
   parseDashboardPublishArgs,
   parseRetryStatusCodes,
   resolveRetryPolicyForRequest,
@@ -150,6 +151,32 @@ describe("parseDashboardPublishArgs", () => {
   it("parses force token and numeric window", () => {
     expect(parseDashboardPublishArgs("48 force")).toEqual({ windowHours: 48, force: true });
     expect(parseDashboardPublishArgs("--force 12")).toEqual({ windowHours: 12, force: true });
+  });
+});
+
+describe("parseOpsAlertArgs", () => {
+  it("parses defaults when args are missing", () => {
+    expect(parseOpsAlertArgs()).toEqual({
+      severity: "critical",
+      source: "operator.manual",
+      message: "manual escalation",
+      businessUnit: undefined,
+      channel: undefined,
+    });
+  });
+
+  it("parses severity, metadata tokens, and message text", () => {
+    expect(
+      parseOpsAlertArgs(
+        "warning source=ops.autopublish bu=pokemon channel=123456 pipeline delay detected",
+      ),
+    ).toEqual({
+      severity: "warning",
+      source: "ops.autopublish",
+      message: "pipeline delay detected",
+      businessUnit: "pokemon",
+      channel: "123456",
+    });
   });
 });
 

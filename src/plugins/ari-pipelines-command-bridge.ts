@@ -765,6 +765,67 @@ function parseOpsAutopublishArgs(args?: string): {
   return { action: "run", force, windowHours };
 }
 
+export function parseOpsAlertArgs(args?: string): {
+  severity: "info" | "warning" | "critical";
+  source: string;
+  message: string;
+  businessUnit?: string;
+  channel?: string;
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  let severity: "info" | "warning" | "critical" = "critical";
+  let source = "operator.manual";
+  let businessUnit: string | undefined;
+  let channel: string | undefined;
+  const messageTokens: string[] = [];
+
+  for (let idx = 0; idx < tokens.length; idx += 1) {
+    const token = tokens[idx];
+    const normalized = token.toLowerCase();
+    if (
+      idx === 0 &&
+      (normalized === "info" || normalized === "warning" || normalized === "critical")
+    ) {
+      severity = normalized;
+      continue;
+    }
+    const eqIdx = token.indexOf("=");
+    if (eqIdx > 0) {
+      const key = token.slice(0, eqIdx).trim().toLowerCase();
+      const value = token.slice(eqIdx + 1).trim();
+      if (!value) {
+        continue;
+      }
+      if (key === "source") {
+        source = value;
+        continue;
+      }
+      if (key === "bu" || key === "businessunit") {
+        businessUnit = value;
+        continue;
+      }
+      if (key === "channel") {
+        channel = value;
+        continue;
+      }
+    }
+    messageTokens.push(token);
+  }
+
+  return {
+    severity,
+    source,
+    message: messageTokens.join(" ").trim() || "manual escalation",
+    businessUnit,
+    channel,
+  };
+}
+
 type OpsAutopublishController = {
   start: () => void;
   stop: () => void;
@@ -1240,6 +1301,54 @@ async function handleOpsAutopublishCommand(
   ]);
 }
 
+async function handleOpsAlertCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseOpsAlertArgs(args);
+  const metadata: Record<string, unknown> = {
+    triggeredBy: "manual-command",
+  };
+  if (parsed.businessUnit) {
+    metadata.businessUnit = parsed.businessUnit;
+  }
+  if (parsed.channel) {
+    metadata.channel = parsed.channel;
+  }
+
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: "/api/ops/alerts/escalate",
+    body: {
+      severity: parsed.severity,
+      source: parsed.source,
+      message: parsed.message,
+      metadata,
+    },
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops alert failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const matchedOverrides = Array.isArray(payload.matchedOverrides)
+    ? payload.matchedOverrides
+        .map((entry) => asTrimmedString(entry))
+        .filter(Boolean)
+        .join(",")
+    : "none";
+  return asReply([
+    "ARI ops alert",
+    `severity=${asTrimmedString(payload.severity) ?? parsed.severity} source=${asTrimmedString(payload.source) ?? parsed.source}`,
+    `message=${asTrimmedString(payload.message) ?? parsed.message}`,
+    `notify=${String(payload.notify === true)} sent=${String(payload.sent === true)} webhookConfigured=${String(payload.webhookConfigured === true)} webhookSource=${asTrimmedString(payload.webhookSource) ?? "n/a"}`,
+    `policyAction=${asTrimmedString(payload.policyAction) ?? "n/a"} operatorSlaMinutes=${formatNumber(payload.operatorSlaMinutes, 0)} matchedOverrides=${matchedOverrides}`,
+    `error=${asTrimmedString(payload.error) ?? "none"}`,
+    "usage: /ari-ops-alert <severity?> <message> [source=<id>] [bu=<business-unit>] [channel=<channel-id>]",
+  ]);
+}
+
 async function handleP1RunCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -1706,6 +1815,18 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsAutopublishCommand(opsAutopublish, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-alert",
+    description:
+      "Emit a manual ops escalation alert (optional: <severity> <message> [source=...] [bu=...] [channel=...])",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsAlertCommand(runtime, ctx.args),
     }),
   });
 
