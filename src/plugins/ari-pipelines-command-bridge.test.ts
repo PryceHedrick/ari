@@ -6,6 +6,7 @@ import {
   extractCommandChannelId,
   normalizeChannelId,
   parseOpsAlertArgs,
+  parseOpsAckArgs,
   parseOpsCanaryArgs,
   parseDashboardPublishArgs,
   parseRetryStatusCodes,
@@ -188,6 +189,32 @@ describe("parseOpsAlertArgs", () => {
       message: "pipeline delay detected",
       businessUnit: "pokemon",
       channel: "123456",
+    });
+  });
+});
+
+describe("parseOpsAckArgs", () => {
+  it("parses defaults when args are missing", () => {
+    expect(parseOpsAckArgs()).toEqual({
+      source: "ops.canary",
+      reason: "manual canary acknowledgment",
+      scope: "canary",
+      businessUnit: undefined,
+      channel: undefined,
+    });
+  });
+
+  it("parses source/scope metadata and reason text", () => {
+    expect(
+      parseOpsAckArgs(
+        "source=ops.canary scope=general bu=pokemon channel=123 owner acknowledged and investigating",
+      ),
+    ).toEqual({
+      source: "ops.canary",
+      reason: "owner acknowledged and investigating",
+      scope: "general",
+      businessUnit: "pokemon",
+      channel: "123",
     });
   });
 });

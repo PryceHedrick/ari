@@ -947,6 +947,62 @@ export function parseOpsAlertArgs(args?: string): {
   };
 }
 
+export function parseOpsAckArgs(args?: string): {
+  source: string;
+  reason: string;
+  scope: "canary" | "general";
+  businessUnit?: string;
+  channel?: string;
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  let source = "ops.canary";
+  let scope: "canary" | "general" = "canary";
+  let businessUnit: string | undefined;
+  let channel: string | undefined;
+  const reasonTokens: string[] = [];
+
+  for (const token of tokens) {
+    const eqIdx = token.indexOf("=");
+    if (eqIdx > 0) {
+      const key = token.slice(0, eqIdx).trim().toLowerCase();
+      const value = token.slice(eqIdx + 1).trim();
+      if (!value) {
+        continue;
+      }
+      if (key === "source") {
+        source = value;
+        continue;
+      }
+      if (key === "scope") {
+        scope = value.toLowerCase() === "general" ? "general" : "canary";
+        continue;
+      }
+      if (key === "bu" || key === "businessunit") {
+        businessUnit = value;
+        continue;
+      }
+      if (key === "channel") {
+        channel = value;
+        continue;
+      }
+    }
+    reasonTokens.push(token);
+  }
+
+  return {
+    source,
+    reason: reasonTokens.join(" ").trim() || "manual canary acknowledgment",
+    scope,
+    businessUnit,
+    channel,
+  };
+}
+
 export function parseOpsCanaryArgs(args?: string): {
   action: "status" | "run";
   severity?: "info" | "warning" | "critical";
@@ -1713,6 +1769,48 @@ async function handleOpsAlertCommand(
   ]);
 }
 
+async function handleOpsAckCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseOpsAckArgs(args);
+  const metadata: Record<string, unknown> = {
+    triggeredBy: "manual-command",
+    scope: parsed.scope,
+  };
+  if (parsed.businessUnit) {
+    metadata.businessUnit = parsed.businessUnit;
+  }
+  if (parsed.channel) {
+    metadata.channel = parsed.channel;
+  }
+
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: "/api/ops/alerts/ack",
+    body: {
+      source: parsed.source,
+      reason: parsed.reason,
+      metadata,
+    },
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops ack failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const canary = asRecord(payload.canary);
+  return asReply([
+    "ARI ops ack",
+    `acknowledged=${String(payload.acknowledged === true)} scope=${asTrimmedString(payload.scope) ?? parsed.scope}`,
+    `source=${asTrimmedString(payload.source) ?? parsed.source}`,
+    `reason=${asTrimmedString(payload.reason) ?? parsed.reason}`,
+    `canary acks24h=${formatNumber(canary.ackCount24h, 0)} failedRuns24h=${formatNumber(canary.failedRuns24h, 0)} lastAckAt=${asTrimmedString(canary.lastAckAt) ?? "n/a"} lastFailureAt=${asTrimmedString(canary.lastFailureAt) ?? "n/a"}`,
+    "usage: /ari-ops-ack <reason> [source=<id>] [scope=canary|general] [bu=<business-unit>] [channel=<channel-id>]",
+  ]);
+}
+
 async function handleOpsCanaryCommand(
   controller: OpsCanaryController,
   args?: string,
@@ -2229,6 +2327,18 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsAlertCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-ack",
+    description:
+      "Acknowledge canary/ops alert ownership (optional: <reason> [source=...] [scope=canary|general] [bu=...] [channel=...])",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsAckCommand(runtime, ctx.args),
     }),
   });
 
