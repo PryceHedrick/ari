@@ -619,7 +619,7 @@ function parseJsonSafe(raw: string): unknown {
   }
 }
 
-async function callAriPipelinesApi(params: {
+export async function callAriPipelinesApi(params: {
   runtime: BridgeRuntimeConfig;
   method: HttpMethod;
   path: string;
@@ -670,7 +670,7 @@ async function callAriPipelinesApi(params: {
   );
 }
 
-async function callAriPipelinesApiOnce(params: {
+export async function callAriPipelinesApiOnce(params: {
   runtime: BridgeRuntimeConfig;
   method: HttpMethod;
   path: string;

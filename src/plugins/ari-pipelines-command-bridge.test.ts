@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  callAriPipelinesApi,
   computeRetryDelayMs,
   evaluateCommandAccess,
   extractCommandChannelId,
@@ -265,5 +266,126 @@ describe("resolveRetryPolicyForRequest", () => {
     });
     expect(approvePolicy.attempts).toBe(1);
     expect(rejectPolicy.attempts).toBe(1);
+  });
+});
+
+describe("callAriPipelinesApi", () => {
+  it("retries retryable failures and recovers on a later attempt", async () => {
+    const runtime = buildRuntime({
+      timeoutMs: 200,
+      retry: {
+        attempts: 3,
+        minDelayMs: 1,
+        maxDelayMs: 1,
+        statusCodes: new Set([500, 503]),
+      },
+    });
+    let calls = 0;
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: "transient upstream failure" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof global.fetch;
+
+    try {
+      const result = await callAriPipelinesApi({
+        runtime,
+        method: "GET",
+        path: "/healthz",
+      });
+      expect(result.ok).toBe(true);
+      expect(result.status).toBe(200);
+      expect(calls).toBe(2);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("does not retry non-retryable status codes", async () => {
+    const runtime = buildRuntime({
+      timeoutMs: 200,
+      retry: {
+        attempts: 4,
+        minDelayMs: 1,
+        maxDelayMs: 1,
+        statusCodes: new Set([500, 503]),
+      },
+    });
+    let calls = 0;
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ error: "bad request" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof global.fetch;
+
+    try {
+      const result = await callAriPipelinesApi({
+        runtime,
+        method: "GET",
+        path: "/api/p1/run",
+      });
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(400);
+      expect(calls).toBe(1);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("returns timeout error when request exceeds timeout", async () => {
+    const runtime = buildRuntime({
+      timeoutMs: 20,
+      retry: {
+        attempts: 1,
+        minDelayMs: 1,
+        maxDelayMs: 1,
+        statusCodes: new Set([500]),
+      },
+    });
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(
+      async (_url: URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            return;
+          }
+          if (signal.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        }),
+    ) as unknown as typeof global.fetch;
+
+    try {
+      const result = await callAriPipelinesApi({
+        runtime,
+        method: "GET",
+        path: "/healthz",
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("timeout");
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
