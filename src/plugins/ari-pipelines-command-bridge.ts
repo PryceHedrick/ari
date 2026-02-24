@@ -324,7 +324,7 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   return resolved;
 }
 
-function resolveRetryPolicyForRequest(params: {
+export function resolveRetryPolicyForRequest(params: {
   runtime: BridgeRuntimeConfig;
   method: HttpMethod;
   path: string;

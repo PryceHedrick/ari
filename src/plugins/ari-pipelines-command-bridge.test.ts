@@ -5,6 +5,7 @@ import {
   extractCommandChannelId,
   normalizeChannelId,
   parseRetryStatusCodes,
+  resolveRetryPolicyForRequest,
   type BridgeRuntimeConfig,
 } from "./ari-pipelines-command-bridge.js";
 import type { PluginCommandContext } from "./types.js";
@@ -126,5 +127,70 @@ describe("computeRetryDelayMs", () => {
     expect(computeRetryDelayMs({ attempt: 1, minDelayMs: 200, maxDelayMs: 2000 })).toBe(200);
     expect(computeRetryDelayMs({ attempt: 2, minDelayMs: 200, maxDelayMs: 2000 })).toBe(400);
     expect(computeRetryDelayMs({ attempt: 5, minDelayMs: 200, maxDelayMs: 2000 })).toBe(2000);
+  });
+});
+
+describe("resolveRetryPolicyForRequest", () => {
+  it("uses full retry policy for GET requests", () => {
+    const runtime = buildRuntime({
+      retry: {
+        attempts: 4,
+        minDelayMs: 100,
+        maxDelayMs: 1000,
+        statusCodes: new Set([408, 429]),
+      },
+      mutationRetryAttempts: 2,
+      approvalRetryAttempts: 1,
+    });
+    const policy = resolveRetryPolicyForRequest({
+      runtime,
+      method: "GET",
+      path: "/api/ops/sla",
+    });
+    expect(policy.attempts).toBe(4);
+  });
+
+  it("uses mutation attempts for non-approval POST requests", () => {
+    const runtime = buildRuntime({
+      retry: {
+        attempts: 4,
+        minDelayMs: 100,
+        maxDelayMs: 1000,
+        statusCodes: new Set([408, 429]),
+      },
+      mutationRetryAttempts: 2,
+      approvalRetryAttempts: 1,
+    });
+    const policy = resolveRetryPolicyForRequest({
+      runtime,
+      method: "POST",
+      path: "/api/p2/demo/build",
+    });
+    expect(policy.attempts).toBe(2);
+  });
+
+  it("uses approval attempts for approve/reject paths", () => {
+    const runtime = buildRuntime({
+      retry: {
+        attempts: 4,
+        minDelayMs: 100,
+        maxDelayMs: 1000,
+        statusCodes: new Set([408, 429]),
+      },
+      mutationRetryAttempts: 2,
+      approvalRetryAttempts: 1,
+    });
+    const approvePolicy = resolveRetryPolicyForRequest({
+      runtime,
+      method: "POST",
+      path: "/api/p2/outreach/123/approve",
+    });
+    const rejectPolicy = resolveRetryPolicyForRequest({
+      runtime,
+      method: "POST",
+      path: "/api/p2/outreach/123/reject",
+    });
+    expect(approvePolicy.attempts).toBe(1);
+    expect(rejectPolicy.attempts).toBe(1);
   });
 });
