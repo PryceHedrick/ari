@@ -1767,6 +1767,35 @@ async function handleOpsWeeklyDigestCommand(
   ]);
 }
 
+async function handleOpsWeeklyDigestPublishCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const windowHours = parseWeeklyWindowHoursArg(args);
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: "/api/ops/digest/weekly/publish",
+    body: { windowHours },
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops weekly digest publish failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const summary = asRecord(payload.summary);
+  const totals = asRecord(summary.totals);
+  return asReply([
+    "ARI ops weekly digest publish",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
+    `markdownPath: ${asTrimmedString(payload.markdownPath) ?? "n/a"} csvPath: ${asTrimmedString(payload.csvPath) ?? "n/a"}`,
+    `retentionPruned: ${formatNumber(payload.retentionPruned, 0)} webhookConfigured: ${String(payload.webhookConfigured === true)} webhookSource: ${asTrimmedString(payload.webhookSource) ?? "none"}`,
+    `published: ${String(payload.published === true)} status: ${formatNumber(payload.publishStatus, 0)} error: ${asTrimmedString(payload.publishError) ?? "none"}`,
+    `days=${formatNumber(summary.dayCount, 0)} p1Runs=${formatNumber(totals.p1Runs, 0)} p2Scans=${formatNumber(totals.p2Scans, 0)} escalationsSuppressed=${formatNumber(totals.escalationsSuppressed, 0)}`,
+    "usage: /ari-ops-weekly-publish [window-hours]",
+  ]);
+}
+
 async function handleOpsAutopublishCommand(
   controller: OpsAutopublishController,
   args?: string,
@@ -2423,6 +2452,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsWeeklyDigestCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-weekly-publish",
+    description: "Export and publish weekly ops digest artifacts (optional: <window-hours>)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsWeeklyDigestPublishCommand(runtime, ctx.args),
     }),
   });
 
