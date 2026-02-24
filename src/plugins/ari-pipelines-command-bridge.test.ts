@@ -8,6 +8,7 @@ import {
   parseOpsAlertArgs,
   parseOpsAckArgs,
   parseOpsCanaryArgs,
+  parseP2FeedbackArgs,
   parseDashboardPublishArgs,
   parseRetryStatusCodes,
   resolveRetryPolicyForRequest,
@@ -228,6 +229,24 @@ describe("parseOpsCanaryArgs", () => {
   it("parses run action with severity override", () => {
     expect(parseOpsCanaryArgs("run info")).toEqual({ action: "run", severity: "info" });
     expect(parseOpsCanaryArgs("run critical")).toEqual({ action: "run", severity: "critical" });
+  });
+});
+
+describe("parseP2FeedbackArgs", () => {
+  it("returns defaults when args are missing", () => {
+    expect(parseP2FeedbackArgs()).toEqual({
+      outreachId: undefined,
+      outcome: "no_response",
+      notes: undefined,
+    });
+  });
+
+  it("parses outreach id, outcome, and notes", () => {
+    expect(parseP2FeedbackArgs("outreach-123 won client accepted proposal")).toEqual({
+      outreachId: "outreach-123",
+      outcome: "won",
+      notes: "client accepted proposal",
+    });
   });
 });
 

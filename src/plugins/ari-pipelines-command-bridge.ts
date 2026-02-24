@@ -1480,6 +1480,42 @@ function parseRequiredId(args: string | undefined): string | undefined {
   return first ? first.trim() : undefined;
 }
 
+export function parseP2FeedbackArgs(args?: string): {
+  outreachId?: string;
+  outcome: "won" | "meeting_booked" | "lost" | "no_response";
+  notes?: string;
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return {
+      outreachId: undefined,
+      outcome: "no_response",
+      notes: undefined,
+    };
+  }
+
+  const outreachId = tokens[0];
+  const outcomeToken = tokens[1]?.toLowerCase();
+  const outcome =
+    outcomeToken === "won" ||
+    outcomeToken === "meeting_booked" ||
+    outcomeToken === "lost" ||
+    outcomeToken === "no_response"
+      ? outcomeToken
+      : "no_response";
+  const notesTokens = outcomeToken === outcome ? tokens.slice(2) : tokens.slice(1);
+  const notes = notesTokens.join(" ").trim() || undefined;
+  return {
+    outreachId,
+    outcome,
+    notes,
+  };
+}
+
 function asReply(textLines: string[]): ReplyPayload {
   return { text: textLines.join("\n") };
 }
@@ -2252,6 +2288,40 @@ async function handleP2RejectCommand(
   ]);
 }
 
+async function handleP2FeedbackCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseP2FeedbackArgs(args);
+  if (!parsed.outreachId) {
+    return asReply([
+      "Usage: /ari-p2-feedback <outreach-id> <won|meeting_booked|lost|no_response> [notes]",
+    ]);
+  }
+
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: `/api/p2/outreach/${encodeURIComponent(parsed.outreachId)}/feedback`,
+    body: {
+      outcome: parsed.outcome,
+      ...(parsed.notes ? { notes: parsed.notes } : {}),
+    },
+  });
+  if (!result.ok) {
+    return asReply([`P2 outreach feedback failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  return asReply([
+    `P2 outreach feedback updated: ${parsed.outreachId}`,
+    `updated: ${String(payload.updated === true)} status: ${asTrimmedString(payload.status) ?? "n/a"}`,
+    `outcome: ${asTrimmedString(payload.outcome) ?? parsed.outcome} segment: ${asTrimmedString(payload.segmentKey) ?? "n/a"}`,
+    `scoreAdjustment: ${formatNumber(payload.scoreAdjustment, 0)} sampleSize: ${formatNumber(payload.sampleSize, 0)}`,
+    `error: ${asTrimmedString(payload.error) ?? "none"}`,
+  ]);
+}
+
 function withAccessControl(params: {
   runtime: BridgeRuntimeConfig;
   scope: CommandScope;
@@ -2520,6 +2590,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "p2",
       handler: async (ctx) => handleP2RejectCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-p2-feedback",
+    description: "Record Pipeline 2 outreach outcome feedback for scoring loop",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "p2",
+      handler: async (ctx) => handleP2FeedbackCommand(runtime, ctx.args),
     }),
   });
 }
