@@ -534,6 +534,14 @@ function parseLimitArg(args?: string): number {
   return Math.min(25, Math.max(1, Math.floor(parsed)));
 }
 
+function parseWindowHoursArg(args?: string): number {
+  const parsed = Number((args ?? "").trim());
+  if (!Number.isFinite(parsed)) {
+    return 24;
+  }
+  return Math.min(72, Math.max(1, Math.floor(parsed)));
+}
+
 function parseQueueArgs(params: { args?: string; validStatuses: Set<string> }): {
   limit: number;
   status?: string;
@@ -646,6 +654,51 @@ async function handleOpsQueuesCommand(runtime: BridgeRuntimeConfig): Promise<Rep
     `p2: total=${formatNumber(p2.total, 0)} draft=${formatNumber(p2.draft, 0)} stale=${formatNumber(p2.staleDraft, 0)} high=${formatNumber(p2.highPriorityPending, 0)} queued=${formatNumber(p2.queued, 0)} approved=${formatNumber(p2.approved, 0)} sent=${formatNumber(p2.sent, 0)} rejected=${formatNumber(p2.rejected, 0)} oldestDraftMin=${formatNumber(p2.oldestDraftMinutes, 0)}`,
     `thresholds: p1 stale=${formatNumber(thresholds.p1StaleMinutes, 0)}m critical=${formatNumber(thresholds.p1CriticalMinutes, 0)}m | p2 stale=${formatNumber(thresholds.p2StaleMinutes, 0)}m critical=${formatNumber(thresholds.p2CriticalMinutes, 0)}m`,
   ]);
+}
+
+async function handleOpsSlaCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const windowHours = parseWindowHoursArg(args);
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "GET",
+    path: `/api/ops/sla?windowHours=${windowHours}`,
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops SLA failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const pipelines = asRecord(payload.pipelines);
+  const p1 = asRecord(pipelines.p1);
+  const p2 = asRecord(pipelines.p2);
+  const budget = asRecord(payload.budget);
+  const alerts = Array.isArray(payload.alerts) ? payload.alerts : [];
+
+  const lines = [
+    "ARI ops SLA",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
+    `p1: runs=${formatNumber(p1.totalRuns, 0)} successRate=${formatNumber(p1.successRate, 3)} avgDurationSec=${formatNumber(Number(p1.averageDurationMs) / 1000, 1)} avgCostUsd=${formatNumber(p1.averageCostUsd, 3)}`,
+    `p2: runs=${formatNumber(p2.totalRuns, 0)} successRate=${formatNumber(p2.successRate, 3)} avgDurationSec=${formatNumber(Number(p2.averageDurationMs) / 1000, 1)} avgCostUsd=${formatNumber(p2.averageCostUsd, 3)}`,
+    `budget: remainingUsd=${formatNumber(budget.dailyRemainingUsd, 2)} usedUsd=${formatNumber(budget.dailyUsedUsd, 2)} limitUsd=${formatNumber(budget.dailyLimitUsd, 2)}`,
+  ];
+
+  if (alerts.length === 0) {
+    lines.push("alerts: none");
+    return asReply(lines);
+  }
+
+  lines.push(`alerts: ${alerts.length}`);
+  for (let idx = 0; idx < Math.min(alerts.length, 5); idx += 1) {
+    const alert = asRecord(alerts[idx]);
+    const severity = asTrimmedString(alert.severity) ?? "n/a";
+    const code = asTrimmedString(alert.code) ?? "n/a";
+    const message = asTrimmedString(alert.message) ?? "n/a";
+    lines.push(`  - [${severity}] ${code}: ${message}`);
+  }
+  return asReply(lines);
 }
 
 async function handleP1RunCommand(
@@ -1054,6 +1107,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async () => handleOpsQueuesCommand(runtime),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-sla",
+    description: "Show 24h SLA, budget, and alert telemetry (optional: <window-hours>)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsSlaCommand(runtime, ctx.args),
     }),
   });
 
