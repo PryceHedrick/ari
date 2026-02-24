@@ -2458,6 +2458,7 @@ async function handleOpsWeeklyDigestOverrideCommand(
 
   const payload = asRecord(result.data);
   const publish = asRecord(payload.publish);
+  const throttleEscalation = asRecord(payload.throttleEscalation);
   return asReply([
     "ARI ops weekly digest override",
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(parsed.windowHours, 0)} | requestedBy=${asTrimmedString(payload.requestedBy) ?? "manual-command"}`,
@@ -2473,6 +2474,7 @@ async function handleOpsWeeklyDigestOverrideCommand(
     `approved=${String(payload.approved === true)} overrideExecuted=${String(payload.overrideExecuted === true)} ruleKey=${asTrimmedString(payload.ruleKey) ?? "n/a"} requiresManualApproval=${String(payload.requiresManualApproval === true)}`,
     `decision: ${formatDecisionOutcome(payload.decision)}`,
     `publish configured=${String(publish.webhookConfigured === true)} source=${asTrimmedString(publish.webhookSource) ?? "n/a"} published=${String(publish.published === true)} status=${formatNumber(publish.publishStatus, 0)} error=${asTrimmedString(publish.publishError) ?? "none"}`,
+    `throttleEscalation notify=${String(throttleEscalation.notify === true)} sent=${String(throttleEscalation.sent === true)} error=${asTrimmedString(throttleEscalation.error) ?? "none"}`,
     `error=${asTrimmedString(payload.error) ?? "none"}`,
     "usage: /ari-ops-weekly-override [window-hours|window=<hours>] <prefix: reason>",
   ]);
