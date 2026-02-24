@@ -502,6 +502,36 @@ async function handleP1ApproveCommand(
   ]);
 }
 
+async function handleP1JobStatusCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const jobId = parseRequiredId(args);
+  if (!jobId) {
+    return asReply(["Usage: /ari-p1-job <job-id>"]);
+  }
+
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "GET",
+    path: `/api/p1/video/job/${encodeURIComponent(jobId)}`,
+  });
+  if (!result.ok) {
+    return asReply([`P1 job lookup failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const output = asRecord(payload.output);
+  const clips = Array.isArray(output.clips) ? output.clips.length : 0;
+
+  return asReply([
+    `P1 video job: ${jobId}`,
+    `status: ${asTrimmedString(payload.status) ?? "n/a"}`,
+    `masterVideoPath: ${asTrimmedString(output.masterVideoPath) ?? "n/a"}`,
+    `clips: ${clips}`,
+  ]);
+}
+
 async function handleP2ScanCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -707,6 +737,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "p1",
       handler: async (ctx) => handleP1VideoCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-p1-job",
+    description: "Fetch Pipeline 1 video job status by id",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "p1",
+      handler: async (ctx) => handleP1JobStatusCommand(runtime, ctx.args),
     }),
   });
 
