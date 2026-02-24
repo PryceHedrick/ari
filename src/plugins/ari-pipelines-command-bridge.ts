@@ -2810,6 +2810,7 @@ async function handleP2FeedbackStatsCommand(
   }
 
   const payload = asRecord(result.data);
+  const confidence = asRecord(payload.confidence);
   const totals = asRecord(payload.totals);
   const allTime = asRecord(totals.allTime);
   const rollingWindow = asRecord(totals.rollingWindow);
@@ -2825,6 +2826,7 @@ async function handleP2FeedbackStatsCommand(
     `window total=${formatNumber(rollingWindow.totalFeedback, 0)} winRate=${formatNumber(rollingWindow.winRate, 3)} positiveRate=${formatNumber(rollingWindow.positiveRate, 3)}`,
     `rolling7 total=${formatNumber(rolling7d.totalFeedback, 0)} winRate=${formatNumber(rolling7d.winRate, 3)} | rolling30 total=${formatNumber(rolling30d.totalFeedback, 0)} winRate=${formatNumber(rolling30d.winRate, 3)}`,
     `delta 7v30 winRate=${formatNumber(deltas.winRate7v30, 3)} positiveRate=${formatNumber(deltas.positiveRate7v30, 3)} responseRate=${formatNumber(deltas.responseRate7v30, 3)}`,
+    `confidence minSample=${formatNumber(confidence.minimumSampleThreshold, 0)} medium=${formatNumber(confidence.mediumSampleThreshold, 0)} high=${formatNumber(confidence.highSampleThreshold, 0)} eligibleSegments=${formatNumber(confidence.eligibleSegmentCount, 0)}`,
   ];
 
   if (segments.length === 0) {
@@ -2840,7 +2842,7 @@ async function handleP2FeedbackStatsCommand(
     const segmentRolling30 = asRecord(segment.rolling30d);
     const segmentRolling7 = asRecord(segment.rolling7d);
     lines.push(
-      `${idx + 1}. ${key} | 30d total=${formatNumber(segmentRolling30.totalFeedback, 0)} winRate=${formatNumber(segmentRolling30.winRate, 3)} | 7d total=${formatNumber(segmentRolling7.totalFeedback, 0)} winRate=${formatNumber(segmentRolling7.winRate, 3)} | delta=${formatNumber(segment.winRateDelta7v30, 3)} | scoreAdj=${formatNumber(segment.scoreAdjustment, 0)}`,
+      `${idx + 1}. ${key} | 30d total=${formatNumber(segmentRolling30.totalFeedback, 0)} winRate=${formatNumber(segmentRolling30.winRate, 3)} | 7d total=${formatNumber(segmentRolling7.totalFeedback, 0)} winRate=${formatNumber(segmentRolling7.winRate, 3)} | delta=${formatNumber(segment.winRateDelta7v30, 3)} | confidence=${asTrimmedString(segment.confidenceTier) ?? "n/a"} sample30d=${formatNumber(segment.sample30d, 0)} minimumMet=${String(segment.minimumSampleMet === true)} | scoreAdj=${formatNumber(segment.scoreAdjustment, 0)}`,
     );
   }
   lines.push("usage: /ari-p2-feedback-stats [window-days] [segment-limit]");
