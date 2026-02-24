@@ -65,6 +65,8 @@
             windowHours: "${ARI_OPS_AUTOPUBLISH_WINDOW_HOURS:-24}",
             startupDelaySeconds: "${ARI_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS:-45}",
             force: "${ARI_OPS_AUTOPUBLISH_FORCE:-false}",
+            businessUnit: "${ARI_OPS_AUTOPUBLISH_BUSINESS_UNIT:-operations}",
+            channelId: "${ARI_OPS_AUTOPUBLISH_CHANNEL_ID:-${ARI_DISCORD_CHANNEL_SYSTEM_STATUS}}",
             failureAlertThreshold: "${ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD:-3}",
             failureAlertCooldownMinutes: "${ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES:-120}",
           },

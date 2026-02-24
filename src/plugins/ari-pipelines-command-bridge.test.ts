@@ -29,6 +29,8 @@ function buildRuntime(overrides?: Partial<BridgeRuntimeConfig>): BridgeRuntimeCo
       windowHours: 24,
       startupDelaySeconds: 45,
       force: false,
+      businessUnit: "operations",
+      channelId: undefined,
       failureAlertThreshold: 3,
       failureAlertCooldownMinutes: 120,
     },

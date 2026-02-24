@@ -18,6 +18,8 @@ type BridgeOpsAutopublishConfig = {
   windowHours: number;
   startupDelaySeconds: number;
   force: boolean;
+  businessUnit: string;
+  channelId?: string;
   failureAlertThreshold: number;
   failureAlertCooldownMinutes: number;
 };
@@ -45,6 +47,8 @@ type OpsAutopublishStatus = {
   windowHours: number;
   startupDelaySeconds: number;
   force: boolean;
+  businessUnit: string;
+  channelId?: string;
   failureAlertThreshold: number;
   failureAlertCooldownMinutes: number;
   totalRuns: number;
@@ -369,6 +373,13 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
     asBoolean(opsAutopublishConfig.force) ??
     asBoolean(readEnv("ARI_OPS_AUTOPUBLISH_FORCE")) ??
     false;
+  const opsAutopublishBusinessUnit =
+    asTrimmedString(opsAutopublishConfig.businessUnit) ??
+    readEnv("ARI_OPS_AUTOPUBLISH_BUSINESS_UNIT") ??
+    "operations";
+  const opsAutopublishChannelId =
+    normalizeChannelId(opsAutopublishConfig.channelId) ??
+    normalizeChannelId(readEnv("ARI_OPS_AUTOPUBLISH_CHANNEL_ID"));
   const opsAutopublishFailureAlertThreshold =
     asPositiveInt(opsAutopublishConfig.failureAlertThreshold) ??
     asPositiveInt(readEnv("ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD")) ??
@@ -397,6 +408,8 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
       windowHours: opsAutopublishWindowHours,
       startupDelaySeconds: opsAutopublishStartupDelaySeconds,
       force: opsAutopublishForce,
+      businessUnit: opsAutopublishBusinessUnit,
+      channelId: opsAutopublishChannelId,
       failureAlertThreshold: opsAutopublishFailureAlertThreshold,
       failureAlertCooldownMinutes: opsAutopublishFailureAlertCooldownMinutes,
     },
@@ -412,6 +425,10 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   addChannelSet(resolved.statusChannels, routing.statusChannelIds);
 
   deriveRoutingChannelsFromConfig(api.config, resolved);
+  if (!resolved.opsAutopublish.channelId && resolved.statusChannels.size > 0) {
+    const fallbackStatusChannel = Array.from(resolved.statusChannels)[0];
+    resolved.opsAutopublish.channelId = fallbackStatusChannel;
+  }
 
   return resolved;
 }
@@ -764,6 +781,8 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
     windowHours: runtime.opsAutopublish.windowHours,
     startupDelaySeconds: runtime.opsAutopublish.startupDelaySeconds,
     force: runtime.opsAutopublish.force,
+    businessUnit: runtime.opsAutopublish.businessUnit,
+    channelId: runtime.opsAutopublish.channelId,
     failureAlertThreshold: runtime.opsAutopublish.failureAlertThreshold,
     failureAlertCooldownMinutes: runtime.opsAutopublish.failureAlertCooldownMinutes,
     totalRuns: 0,
@@ -834,6 +853,8 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
         severity: "critical",
         message: alertMessage,
         metadata: {
+          businessUnit: status.businessUnit,
+          channel: status.channelId ?? null,
           consecutiveFailures: status.consecutiveFailures,
           threshold: status.failureAlertThreshold,
           cooldownMinutes: status.failureAlertCooldownMinutes,
@@ -1210,6 +1231,7 @@ async function handleOpsAutopublishCommand(
   return asReply([
     `ARI ops autopublish${parsed.action === "run" ? " run complete" : " status"}`,
     `enabled=${String(status.enabled)} active=${String(status.active)} inFlight=${String(status.inFlight)} force=${String(status.force)}`,
+    `businessUnit=${status.businessUnit} channel=${status.channelId ?? "n/a"}`,
     `interval=${formatMinutes(status.intervalMinutes)} window=${formatNumber(status.windowHours, 0)}h startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s failureThreshold=${formatNumber(status.failureAlertThreshold, 0)} cooldown=${formatMinutes(status.failureAlertCooldownMinutes)}`,
     `runs=${formatNumber(status.totalRuns, 0)} published=${formatNumber(status.totalPublished, 0)} skipped=${formatNumber(status.totalSkipped, 0)} failures=${formatNumber(status.totalFailures, 0)} consecutiveFailures=${formatNumber(status.consecutiveFailures, 0)}`,
     `lastRunAt=${status.lastRunAt ?? "n/a"} lastCompletedAt=${status.lastCompletedAt ?? "n/a"} lastPublishedAt=${status.lastPublishedAt ?? "n/a"} nextRunAt=${status.nextRunAt ?? "n/a"}`,
