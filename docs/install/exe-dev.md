@@ -17,7 +17,7 @@ This page assumes exe.dev's default **exeuntu** image. If you picked a different
 1. [https://exe.new/openclaw](https://exe.new/openclaw)
 2. Fill in your auth key/token as needed
 3. Click on "Agent" next to your VM, and wait...
-4. ???
+4. Confirm the Gateway is healthy and approve the pairing request
 5. Profit
 
 ## What you need

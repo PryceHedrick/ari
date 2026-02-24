@@ -24,7 +24,7 @@ x-i18n:
 1. [https://exe.new/openclaw](https://exe.new/openclaw)
 2. 根据需要填写你的认证密钥/令牌
 3. 点击 VM 旁边的"Agent"，然后等待...
-4. ???
+4. 确认 Gateway 网关健康状态正常并批准配对请求
 5. 完成
 
 ## 你需要什么
