@@ -2107,8 +2107,9 @@ async function handleP2TopCommand(
     const leadId = asTrimmedString(lead.leadId) ?? "n/a";
     const vertical = asTrimmedString(lead.verticalSegment) ?? "n/a";
     const locality = asTrimmedString(lead.localityTier) ?? "n/a";
+    const sourceQuality = formatNumber(lead.sourceQualityScore, 2);
     lines.push(
-      `${idx + 1}. ${name} | score=${score} | vertical=${vertical} | locality=${locality} | leadId=${leadId}`,
+      `${idx + 1}. ${name} | score=${score} | vertical=${vertical} | locality=${locality} | sourceQ=${sourceQuality} | leadId=${leadId}`,
     );
   }
 
