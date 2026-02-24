@@ -1442,6 +1442,7 @@ async function handleOpsSlaCommand(
   const pipelines = asRecord(payload.pipelines);
   const p1 = asRecord(pipelines.p1);
   const p2 = asRecord(pipelines.p2);
+  const canary = asRecord(payload.canary);
   const budget = asRecord(payload.budget);
   const alerts = Array.isArray(payload.alerts) ? payload.alerts : [];
 
@@ -1450,6 +1451,7 @@ async function handleOpsSlaCommand(
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
     `p1: runs=${formatNumber(p1.totalRuns, 0)} successRate=${formatNumber(p1.successRate, 3)} avgDurationSec=${formatNumber(Number(p1.averageDurationMs) / 1000, 1)} avgCostUsd=${formatNumber(p1.averageCostUsd, 3)}`,
     `p2: runs=${formatNumber(p2.totalRuns, 0)} successRate=${formatNumber(p2.successRate, 3)} avgDurationSec=${formatNumber(Number(p2.averageDurationMs) / 1000, 1)} avgCostUsd=${formatNumber(p2.averageCostUsd, 3)}`,
+    `canary: runs=${formatNumber(canary.totalRuns, 0)} notified=${formatNumber(canary.notifiedRuns, 0)} sent=${formatNumber(canary.sentRuns, 0)} failed=${formatNumber(canary.failedRuns, 0)} sendRate=${formatNumber(canary.sendRate, 3)} failureRate=${formatNumber(canary.failureRate, 3)}`,
     `budget: remainingUsd=${formatNumber(budget.dailyRemainingUsd, 2)} usedUsd=${formatNumber(budget.dailyUsedUsd, 2)} limitUsd=${formatNumber(budget.dailyLimitUsd, 2)}`,
   ];
 
@@ -1489,6 +1491,7 @@ async function handleOpsDashboardCommand(
   const pipelines = asRecord(snapshot.pipelines);
   const p1 = asRecord(pipelines.p1);
   const p2 = asRecord(pipelines.p2);
+  const canary = asRecord(snapshot.canary);
   const alerts = Array.isArray(snapshot.alerts) ? snapshot.alerts.length : 0;
 
   return asReply([
@@ -1496,6 +1499,7 @@ async function handleOpsDashboardCommand(
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
     `artifactPath: ${asTrimmedString(payload.artifactPath) ?? "n/a"}`,
     `p1Runs=${formatNumber(p1.totalRuns, 0)} p1SuccessRate=${formatNumber(p1.successRate, 3)} p2Runs=${formatNumber(p2.totalRuns, 0)} p2SuccessRate=${formatNumber(p2.successRate, 3)}`,
+    `canaryRuns=${formatNumber(canary.totalRuns, 0)} canaryFailed=${formatNumber(canary.failedRuns, 0)} canarySendRate=${formatNumber(canary.sendRate, 3)}`,
     `alerts=${alerts}`,
   ]);
 }
