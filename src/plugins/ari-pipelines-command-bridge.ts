@@ -18,6 +18,8 @@ type BridgeOpsAutopublishConfig = {
   windowHours: number;
   startupDelaySeconds: number;
   force: boolean;
+  failureAlertThreshold: number;
+  failureAlertCooldownMinutes: number;
 };
 
 export type BridgeRuntimeConfig = {
@@ -43,11 +45,14 @@ type OpsAutopublishStatus = {
   windowHours: number;
   startupDelaySeconds: number;
   force: boolean;
+  failureAlertThreshold: number;
+  failureAlertCooldownMinutes: number;
   totalRuns: number;
   totalPublished: number;
   totalSkipped: number;
   totalFailures: number;
   consecutiveFailures: number;
+  escalationCount: number;
   lastTrigger?: string;
   lastRunAt?: string;
   lastCompletedAt?: string;
@@ -55,6 +60,7 @@ type OpsAutopublishStatus = {
   lastGatePassed?: boolean;
   lastPublishStatus?: number;
   lastPublishError?: string;
+  lastEscalatedAt?: string;
   nextRunAt?: string;
 };
 
@@ -84,6 +90,8 @@ const DEFAULT_APPROVAL_RETRY_ATTEMPTS = 1;
 const DEFAULT_OPS_AUTOPUBLISH_INTERVAL_MINUTES = 180;
 const DEFAULT_OPS_AUTOPUBLISH_WINDOW_HOURS = 24;
 const DEFAULT_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS = 45;
+const DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD = 3;
+const DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES = 120;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -361,6 +369,14 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
     asBoolean(opsAutopublishConfig.force) ??
     asBoolean(readEnv("ARI_OPS_AUTOPUBLISH_FORCE")) ??
     false;
+  const opsAutopublishFailureAlertThreshold =
+    asPositiveInt(opsAutopublishConfig.failureAlertThreshold) ??
+    asPositiveInt(readEnv("ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD")) ??
+    DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD;
+  const opsAutopublishFailureAlertCooldownMinutes =
+    asPositiveInt(opsAutopublishConfig.failureAlertCooldownMinutes) ??
+    asPositiveInt(readEnv("ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES")) ??
+    DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES;
   const strictRouting = asBoolean(routing.strict) ?? true;
 
   const resolved: BridgeRuntimeConfig = {
@@ -381,6 +397,8 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
       windowHours: opsAutopublishWindowHours,
       startupDelaySeconds: opsAutopublishStartupDelaySeconds,
       force: opsAutopublishForce,
+      failureAlertThreshold: opsAutopublishFailureAlertThreshold,
+      failureAlertCooldownMinutes: opsAutopublishFailureAlertCooldownMinutes,
     },
     strictRouting,
     p1Channels: new Set<string>(),
@@ -746,11 +764,14 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
     windowHours: runtime.opsAutopublish.windowHours,
     startupDelaySeconds: runtime.opsAutopublish.startupDelaySeconds,
     force: runtime.opsAutopublish.force,
+    failureAlertThreshold: runtime.opsAutopublish.failureAlertThreshold,
+    failureAlertCooldownMinutes: runtime.opsAutopublish.failureAlertCooldownMinutes,
     totalRuns: 0,
     totalPublished: 0,
     totalSkipped: 0,
     totalFailures: 0,
     consecutiveFailures: 0,
+    escalationCount: 0,
   };
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -774,6 +795,30 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
     timer = setTimeout(() => {
       void runNow({ trigger: "interval" });
     }, safeDelayMs);
+  };
+
+  const maybeEscalateFailure = (reason: string) => {
+    if (status.failureAlertThreshold <= 0) {
+      return;
+    }
+    if (status.consecutiveFailures < status.failureAlertThreshold) {
+      return;
+    }
+    const nowMs = Date.now();
+    const cooldownMs = Math.max(1, status.failureAlertCooldownMinutes) * 60_000;
+    const lastEscalatedMs = status.lastEscalatedAt ? new Date(status.lastEscalatedAt).getTime() : 0;
+    if (
+      Number.isFinite(lastEscalatedMs) &&
+      lastEscalatedMs > 0 &&
+      nowMs - lastEscalatedMs < cooldownMs
+    ) {
+      return;
+    }
+    status.lastEscalatedAt = new Date(nowMs).toISOString();
+    status.escalationCount += 1;
+    runtime.logger.error(
+      `[ari-autonomous] ops dashboard autopublish escalation: consecutiveFailures=${status.consecutiveFailures} threshold=${status.failureAlertThreshold} reason=${reason}`,
+    );
   };
 
   const runNow = async (params?: {
@@ -815,6 +860,7 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
         runtime.logger.warn(
           `[ari-autonomous] ops dashboard autopublish failed: ${status.lastPublishError}`,
         );
+        maybeEscalateFailure(status.lastPublishError);
       } else {
         const payload = asRecord(result.data);
         const published = payload.published === true;
@@ -837,6 +883,7 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
             runtime.logger.warn(
               `[ari-autonomous] ops dashboard autopublish skipped with error: ${publishError}`,
             );
+            maybeEscalateFailure(publishError);
           } else {
             status.consecutiveFailures = 0;
             runtime.logger.info("[ari-autonomous] ops dashboard autopublish skipped by gate");
@@ -852,6 +899,7 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
       runtime.logger.warn(
         `[ari-autonomous] ops dashboard autopublish crashed: ${status.lastPublishError}`,
       );
+      maybeEscalateFailure(status.lastPublishError);
     } finally {
       status.inFlight = false;
       if (!stopped && status.enabled) {
@@ -1132,10 +1180,10 @@ async function handleOpsAutopublishCommand(
   return asReply([
     `ARI ops autopublish${parsed.action === "run" ? " run complete" : " status"}`,
     `enabled=${String(status.enabled)} active=${String(status.active)} inFlight=${String(status.inFlight)} force=${String(status.force)}`,
-    `interval=${formatMinutes(status.intervalMinutes)} window=${formatNumber(status.windowHours, 0)}h startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s`,
+    `interval=${formatMinutes(status.intervalMinutes)} window=${formatNumber(status.windowHours, 0)}h startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s failureThreshold=${formatNumber(status.failureAlertThreshold, 0)} cooldown=${formatMinutes(status.failureAlertCooldownMinutes)}`,
     `runs=${formatNumber(status.totalRuns, 0)} published=${formatNumber(status.totalPublished, 0)} skipped=${formatNumber(status.totalSkipped, 0)} failures=${formatNumber(status.totalFailures, 0)} consecutiveFailures=${formatNumber(status.consecutiveFailures, 0)}`,
     `lastRunAt=${status.lastRunAt ?? "n/a"} lastCompletedAt=${status.lastCompletedAt ?? "n/a"} lastPublishedAt=${status.lastPublishedAt ?? "n/a"} nextRunAt=${status.nextRunAt ?? "n/a"}`,
-    `lastGatePassed=${typeof status.lastGatePassed === "boolean" ? String(status.lastGatePassed) : "n/a"} lastStatus=${formatNumber(status.lastPublishStatus, 0)} lastError=${status.lastPublishError ?? "none"}`,
+    `lastGatePassed=${typeof status.lastGatePassed === "boolean" ? String(status.lastGatePassed) : "n/a"} lastStatus=${formatNumber(status.lastPublishStatus, 0)} lastError=${status.lastPublishError ?? "none"} escalations=${formatNumber(status.escalationCount, 0)} lastEscalatedAt=${status.lastEscalatedAt ?? "n/a"}`,
     "usage: /ari-ops-autopublish [status|run [window-hours] [force]]",
   ]);
 }

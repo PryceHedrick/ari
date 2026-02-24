@@ -29,6 +29,8 @@ function buildRuntime(overrides?: Partial<BridgeRuntimeConfig>): BridgeRuntimeCo
       windowHours: 24,
       startupDelaySeconds: 45,
       force: false,
+      failureAlertThreshold: 3,
+      failureAlertCooldownMinutes: 120,
     },
     strictRouting: true,
     p1Channels: new Set<string>(),

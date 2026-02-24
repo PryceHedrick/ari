@@ -65,6 +65,8 @@
             windowHours: "${ARI_OPS_AUTOPUBLISH_WINDOW_HOURS:-24}",
             startupDelaySeconds: "${ARI_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS:-45}",
             force: "${ARI_OPS_AUTOPUBLISH_FORCE:-false}",
+            failureAlertThreshold: "${ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD:-3}",
+            failureAlertCooldownMinutes: "${ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES:-120}",
           },
           routing: {
             strict: true,
