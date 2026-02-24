@@ -76,6 +76,17 @@ type OpsAutopublishStatus = {
   lastGatePassed?: boolean;
   lastPublishStatus?: number;
   lastPublishError?: string;
+  lastHoldSummary?: string;
+  lastP1HoldReasons?: {
+    governanceHold: number;
+    budgetHold: number;
+    dataGap: number;
+  };
+  lastP2HoldReasons?: {
+    governanceHold: number;
+    budgetHold: number;
+    dataGap: number;
+  };
   lastEscalatedAt?: string;
   nextRunAt?: string;
 };
@@ -820,6 +831,27 @@ function formatMinutes(value: unknown): string {
   return `${Math.floor(numeric)}m`;
 }
 
+function readHoldReasons(value: unknown): {
+  governanceHold: number;
+  budgetHold: number;
+  dataGap: number;
+} {
+  const record = asRecord(value);
+  return {
+    governanceHold: asNonNegativeInt(record.governanceHold) ?? 0,
+    budgetHold: asNonNegativeInt(record.budgetHold) ?? 0,
+    dataGap: asNonNegativeInt(record.dataGap) ?? 0,
+  };
+}
+
+function formatHoldReasons(value: {
+  governanceHold: number;
+  budgetHold: number;
+  dataGap: number;
+}): string {
+  return `${value.governanceHold}/${value.budgetHold}/${value.dataGap}`;
+}
+
 function parseOpsAutopublishArgs(args?: string): {
   action: "status" | "run";
   force?: boolean;
@@ -1022,7 +1054,10 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
       `reason=${reason}`,
       `window=${status.windowHours}h`,
       `interval=${status.intervalMinutes}m`,
-    ].join(" | ");
+      status.lastHoldSummary ? `holds=${status.lastHoldSummary}` : undefined,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" | ");
     void callAriPipelinesApi({
       runtime,
       method: "POST",
@@ -1040,6 +1075,8 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
           lastError: reason,
           lastRunAt: status.lastRunAt ?? null,
           lastCompletedAt: status.lastCompletedAt ?? null,
+          p1HoldReasons: status.lastP1HoldReasons ?? null,
+          p2HoldReasons: status.lastP2HoldReasons ?? null,
         },
       },
     }).then((alertResult) => {
@@ -1096,6 +1133,15 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
         const published = payload.published === true;
         const publishError = asTrimmedString(payload.publishError);
         const publishStatus = asPositiveInt(payload.publishStatus);
+        const snapshot = asRecord(payload.snapshot);
+        const queues = asRecord(snapshot.queues);
+        const p1Queue = asRecord(queues.p1);
+        const p2Queue = asRecord(queues.p2);
+        const p1Holds = readHoldReasons(p1Queue.holdReasons);
+        const p2Holds = readHoldReasons(p2Queue.holdReasons);
+        status.lastP1HoldReasons = p1Holds;
+        status.lastP2HoldReasons = p2Holds;
+        status.lastHoldSummary = `p1(gov/budget/dataGap)=${formatHoldReasons(p1Holds)} p2=${formatHoldReasons(p2Holds)}`;
         status.lastGatePassed = payload.gatePassed === true;
         status.lastPublishError = publishError;
         status.lastPublishStatus = publishStatus;
@@ -1606,6 +1652,7 @@ async function handleOpsAutopublishCommand(
     `runs=${formatNumber(status.totalRuns, 0)} published=${formatNumber(status.totalPublished, 0)} skipped=${formatNumber(status.totalSkipped, 0)} failures=${formatNumber(status.totalFailures, 0)} consecutiveFailures=${formatNumber(status.consecutiveFailures, 0)}`,
     `lastRunAt=${status.lastRunAt ?? "n/a"} lastCompletedAt=${status.lastCompletedAt ?? "n/a"} lastPublishedAt=${status.lastPublishedAt ?? "n/a"} nextRunAt=${status.nextRunAt ?? "n/a"}`,
     `lastGatePassed=${typeof status.lastGatePassed === "boolean" ? String(status.lastGatePassed) : "n/a"} lastStatus=${formatNumber(status.lastPublishStatus, 0)} lastError=${status.lastPublishError ?? "none"} escalations=${formatNumber(status.escalationCount, 0)} lastEscalatedAt=${status.lastEscalatedAt ?? "n/a"}`,
+    `lastHolds=${status.lastHoldSummary ?? "n/a"}`,
     "usage: /ari-ops-autopublish [status|run [window-hours] [force]]",
   ]);
 }
