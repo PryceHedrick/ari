@@ -8,6 +8,7 @@ import {
   parseOpsAlertArgs,
   parseOpsAckArgs,
   parseOpsCanaryArgs,
+  parseOpsWeeklyOverrideArgs,
   parseP2FeedbackArgs,
   parseP2FeedbackStatsArgs,
   parseDashboardPublishArgs,
@@ -241,6 +242,29 @@ describe("parseOpsCanaryArgs", () => {
   it("parses run action with severity override", () => {
     expect(parseOpsCanaryArgs("run info")).toEqual({ action: "run", severity: "info" });
     expect(parseOpsCanaryArgs("run critical")).toEqual({ action: "run", severity: "critical" });
+  });
+});
+
+describe("parseOpsWeeklyOverrideArgs", () => {
+  it("returns default window and missing reason when args are empty", () => {
+    expect(parseOpsWeeklyOverrideArgs()).toEqual({
+      windowHours: 168,
+      reason: undefined,
+    });
+  });
+
+  it("parses leading window token and reason text", () => {
+    expect(parseOpsWeeklyOverrideArgs("336 urgent override due to backlog spike")).toEqual({
+      windowHours: 336,
+      reason: "urgent override due to backlog spike",
+    });
+  });
+
+  it("parses window=<hours> token anywhere in args", () => {
+    expect(parseOpsWeeklyOverrideArgs("urgent publish window=240 after incident review")).toEqual({
+      windowHours: 240,
+      reason: "urgent publish after incident review",
+    });
   });
 });
 

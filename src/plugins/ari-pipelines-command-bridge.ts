@@ -1152,6 +1152,50 @@ function parseOpsWeeklyDigestSchedulerArgs(args?: string): {
   return { action: "run", windowHours };
 }
 
+export function parseOpsWeeklyOverrideArgs(args?: string): {
+  windowHours: number;
+  reason?: string;
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  let windowHours = 168;
+  const reasonTokens: string[] = [];
+
+  const parseWindowHours = (value: string): number | undefined => {
+    const raw = Number(value);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return undefined;
+    }
+    return Math.max(24, Math.min(24 * 28, Math.floor(raw)));
+  };
+
+  for (let idx = 0; idx < tokens.length; idx += 1) {
+    const token = tokens[idx];
+    const lower = token.toLowerCase();
+    if (idx === 0) {
+      const parsedLeading = parseWindowHours(token);
+      if (parsedLeading !== undefined && tokens.length > 1) {
+        windowHours = parsedLeading;
+        continue;
+      }
+    }
+    if (lower.startsWith("window=")) {
+      const parsedWindow = parseWindowHours(token.slice("window=".length));
+      if (parsedWindow !== undefined) {
+        windowHours = parsedWindow;
+        continue;
+      }
+    }
+    reasonTokens.push(token);
+  }
+
+  const reason = reasonTokens.join(" ").trim() || undefined;
+  return { windowHours, reason };
+}
+
 type OpsAutopublishController = {
   start: () => void;
   stop: () => void;
@@ -2388,6 +2432,44 @@ async function handleOpsWeeklyDigestSchedulerCommand(
   ]);
 }
 
+async function handleOpsWeeklyDigestOverrideCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseOpsWeeklyOverrideArgs(args);
+  if (!parsed.reason) {
+    return asReply([
+      "Usage: /ari-ops-weekly-override [window-hours|window=<hours>] <override-reason>",
+    ]);
+  }
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: "/api/ops/digest/weekly/publish/override",
+    body: {
+      windowHours: parsed.windowHours,
+      reason: parsed.reason,
+      requestedBy: "manual-command",
+    },
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops weekly override failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const publish = asRecord(payload.publish);
+  return asReply([
+    "ARI ops weekly digest override",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(parsed.windowHours, 0)} | requestedBy=${asTrimmedString(payload.requestedBy) ?? "manual-command"}`,
+    `reason: ${asTrimmedString(payload.reason) ?? parsed.reason}`,
+    `approved=${String(payload.approved === true)} overrideExecuted=${String(payload.overrideExecuted === true)} ruleKey=${asTrimmedString(payload.ruleKey) ?? "n/a"} requiresManualApproval=${String(payload.requiresManualApproval === true)}`,
+    `decision: ${formatDecisionOutcome(payload.decision)}`,
+    `publish configured=${String(publish.webhookConfigured === true)} source=${asTrimmedString(publish.webhookSource) ?? "n/a"} published=${String(publish.published === true)} status=${formatNumber(publish.publishStatus, 0)} error=${asTrimmedString(publish.publishError) ?? "none"}`,
+    `error=${asTrimmedString(payload.error) ?? "none"}`,
+    "usage: /ari-ops-weekly-override [window-hours|window=<hours>] <override-reason>",
+  ]);
+}
+
 async function handleP1RunCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -2975,6 +3057,18 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsWeeklyDigestSchedulerCommand(opsWeeklyDigest, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-weekly-override",
+    description:
+      "Force weekly digest publish with governance gate (usage: [window-hours|window=<hours>] <reason>)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsWeeklyDigestOverrideCommand(runtime, ctx.args),
     }),
   });
 
