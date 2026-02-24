@@ -1,0 +1,10 @@
+{
+  "id": "ari-scheduler",
+  "name": "ari-scheduler",
+  "description": "ari-scheduler plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

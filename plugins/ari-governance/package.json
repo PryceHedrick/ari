@@ -1,9 +1,9 @@
 {
   "name": "@ari/governance",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI constitutional governance — Council of 15 + Arbiter + Overseer",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "openclaw": "workspace:*"
   },
@@ -13,9 +13,6 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ],
-    "hooks": {
-      "before_tool_execute": "./src/governance-gate.ts"
-    }
+    ]
   }
 }

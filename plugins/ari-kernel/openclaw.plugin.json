@@ -1,0 +1,10 @@
+{
+  "id": "ari-kernel",
+  "name": "ari-kernel",
+  "description": "ari-kernel plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

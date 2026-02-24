@@ -1,0 +1,10 @@
+{
+  "id": "ari-memory",
+  "name": "ari-memory",
+  "description": "ari-memory plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

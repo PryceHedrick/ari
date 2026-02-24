@@ -11,23 +11,45 @@
     },
   },
 
-  // ARI plugins (all 13 stubs — Phase 3 activates implementations)
-  plugins: [
-    "plugins/ari-kernel",
-    "plugins/ari-cognitive",
-    "plugins/ari-workspace",
-    "plugins/ari-ai",
-    "plugins/ari-memory",
-    "plugins/ari-scheduler",
-    "plugins/ari-briefings",
-    "plugins/ari-market",
-    // Phase 3 (deferred):
-    "plugins/ari-governance",
-    "plugins/ari-agents",
-    "plugins/ari-autonomous",
-    "plugins/ari-notion",
-    "plugins/ari-voice",
-  ],
+  // ARI plugins (explicit allowlist + config-path discovery)
+  plugins: {
+    enabled: true,
+    load: {
+      paths: [
+        "plugins",
+      ],
+    },
+    allow: [
+      "ari-kernel",
+      "ari-cognitive",
+      "ari-workspace",
+      "ari-ai",
+      "ari-memory",
+      "ari-scheduler",
+      "ari-briefings",
+      "ari-market",
+      "ari-governance",
+      "ari-agents",
+      "ari-autonomous",
+      "ari-notion",
+      "ari-voice",
+    ],
+    entries: {
+      "ari-kernel": { enabled: true },
+      "ari-cognitive": { enabled: true },
+      "ari-workspace": { enabled: true },
+      "ari-ai": { enabled: true },
+      "ari-memory": { enabled: true },
+      "ari-scheduler": { enabled: true },
+      "ari-briefings": { enabled: true },
+      "ari-market": { enabled: true },
+      "ari-governance": { enabled: true },
+      "ari-agents": { enabled: true },
+      "ari-autonomous": { enabled: true },
+      "ari-notion": { enabled: true },
+      "ari-voice": { enabled: true },
+    },
+  },
 
   // Discord — sole channel (no Telegram in ARI)
   channels: {
@@ -42,7 +64,7 @@
     routing: [
       // Most specific rules first
       { channel: "${ARI_DISCORD_CHANNEL_DEEP}", agent: "deep-analysis" },
-      { channel: "${ARI_DISCORD_CHANNEL_PORTFOLIO}", agent: "market-monitor" },
+      { channel: "${ARI_DISCORD_CHANNEL_MARKET_ALERTS}", agent: "market-monitor" },
       { channel: "${ARI_DISCORD_CHANNEL_POKEMON}", agent: "market-monitor" },
       { channel: "${ARI_DISCORD_CHANNEL_LEADS}", agent: "growth-pod" },
       { channel: "${ARI_DISCORD_CHANNEL_BATTLE_PLANS}", agent: "growth-pod" },
@@ -141,7 +163,7 @@
   // P0 alert channel routing (heartbeat monitor)
   alerts: {
     p0Channel: "${ARI_DISCORD_CHANNEL_MARKET_ALERTS}",
-    p1Channel: "${ARI_DISCORD_CHANNEL_EVENING_SUMMARY}",
+    p1Channel: "${ARI_DISCORD_CHANNEL_PAYTHEPRYCE_CONTENT}",
     systemChannel: "${ARI_DISCORD_CHANNEL_SYSTEM_STATUS}",
     mentionUserId: "${PRYCE_USER_ID}",
   },

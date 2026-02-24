@@ -1,9 +1,9 @@
 {
   "name": "@ari/workspace",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI workspace — loads SOUL/USER/HEARTBEAT/AGENTS/RECOVERY files into agent context",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "openclaw": "workspace:*"
   },
@@ -13,9 +13,6 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ],
-    "hooks": {
-      "agent_bootstrap": "./src/workspace-loader.ts"
-    }
+    ]
   }
 }

@@ -1,5 +1,6 @@
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { registerGovernanceGate } from "./src/governance-gate.js";
 
 /**
  * ARI Governance Plugin — Constitutional governance for destructive operations.
@@ -18,14 +19,12 @@ import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
  * Source: src/governance/ (council.ts, arbiter.ts, overseer.ts, policy-engine.ts)
  */
 const plugin = {
-  id: 'ari-governance',
-  name: 'ARI Governance',
-  description: 'Council of 15 voting + Arbiter constitutional rules + Overseer quality gates',
+  id: "ari-governance",
+  name: "ARI Governance",
+  description: "Council of 15 voting + Arbiter constitutional rules + Overseer quality gates",
   configSchema: emptyPluginConfigSchema(),
-  register(_api: OpenClawPluginApi): void {
-    // Phase 3: api.registerHook('before_tool_execute', governanceGate)
-    // Phase 3: api.registerTool({ id: 'ari_council_vote', handler: initiateVote })
-    // Phase 3: api.registerService({ id: 'council', start: initCouncil })
+  register(api: OpenClawPluginApi): void {
+    registerGovernanceGate(api);
   },
 };
 
