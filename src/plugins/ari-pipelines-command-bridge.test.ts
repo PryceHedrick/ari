@@ -4,6 +4,7 @@ import {
   evaluateCommandAccess,
   extractCommandChannelId,
   normalizeChannelId,
+  parseDashboardPublishArgs,
   parseRetryStatusCodes,
   resolveRetryPolicyForRequest,
   type BridgeRuntimeConfig,
@@ -127,6 +128,17 @@ describe("computeRetryDelayMs", () => {
     expect(computeRetryDelayMs({ attempt: 1, minDelayMs: 200, maxDelayMs: 2000 })).toBe(200);
     expect(computeRetryDelayMs({ attempt: 2, minDelayMs: 200, maxDelayMs: 2000 })).toBe(400);
     expect(computeRetryDelayMs({ attempt: 5, minDelayMs: 200, maxDelayMs: 2000 })).toBe(2000);
+  });
+});
+
+describe("parseDashboardPublishArgs", () => {
+  it("parses default args", () => {
+    expect(parseDashboardPublishArgs()).toEqual({ windowHours: 24, force: false });
+  });
+
+  it("parses force token and numeric window", () => {
+    expect(parseDashboardPublishArgs("48 force")).toEqual({ windowHours: 48, force: true });
+    expect(parseDashboardPublishArgs("--force 12")).toEqual({ windowHours: 12, force: true });
   });
 });
 

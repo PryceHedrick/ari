@@ -593,6 +593,27 @@ function parseWindowHoursArg(args?: string): number {
   return Math.min(72, Math.max(1, Math.floor(parsed)));
 }
 
+export function parseDashboardPublishArgs(args?: string): { windowHours: number; force: boolean } {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  let windowHours = 24;
+  let force = false;
+  for (const token of tokens) {
+    if (token === "force" || token === "--force") {
+      force = true;
+      continue;
+    }
+    const parsed = Number(token);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      windowHours = Math.min(72, Math.max(1, Math.floor(parsed)));
+    }
+  }
+  return { windowHours, force };
+}
+
 function parseQueueArgs(params: { args?: string; validStatuses: Set<string> }): {
   limit: number;
   status?: string;
@@ -787,12 +808,12 @@ async function handleOpsDashboardPublishCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
 ): Promise<ReplyPayload> {
-  const windowHours = parseWindowHoursArg(args);
+  const parsed = parseDashboardPublishArgs(args);
   const result = await callAriPipelinesApi({
     runtime,
     method: "POST",
     path: "/api/ops/dashboard/publish",
-    body: { windowHours },
+    body: { windowHours: parsed.windowHours, force: parsed.force },
   });
   if (!result.ok) {
     return asReply([`ARI ops dashboard publish failed: ${result.error ?? "unknown error"}`]);
@@ -801,10 +822,13 @@ async function handleOpsDashboardPublishCommand(
   const payload = asRecord(result.data);
   const published = payload.published === true;
   const webhookConfigured = payload.webhookConfigured === true;
+  const gateApplied = payload.gateApplied === true;
+  const gatePassed = payload.gatePassed === true;
   return asReply([
     "ARI ops dashboard publish",
-    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)} | force=${String(parsed.force)}`,
     `artifactPath: ${asTrimmedString(payload.artifactPath) ?? "n/a"}`,
+    `gateApplied: ${String(gateApplied)} gatePassed: ${String(gatePassed)} gateReason: ${asTrimmedString(payload.gateReason) ?? "none"}`,
     `webhookConfigured: ${String(webhookConfigured)}`,
     `published: ${String(published)}`,
     `status: ${formatNumber(payload.publishStatus, 0)} error: ${asTrimmedString(payload.publishError) ?? "none"}`,
@@ -1250,7 +1274,7 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
 
   api.registerCommand({
     name: "ari-ops-dashboard-publish",
-    description: "Build + publish ops dashboard artifact via configured webhook",
+    description: "Build + publish ops dashboard artifact via webhook (optional: <hours> [force])",
     acceptsArgs: true,
     handler: withAccessControl({
       runtime,
