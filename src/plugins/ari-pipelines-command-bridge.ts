@@ -802,6 +802,14 @@ function parseWindowHoursArg(args?: string): number {
   return Math.min(72, Math.max(1, Math.floor(parsed)));
 }
 
+function parseWeeklyWindowHoursArg(args?: string): number {
+  const parsed = Number((args ?? "").trim());
+  if (!Number.isFinite(parsed)) {
+    return 168;
+  }
+  return Math.min(24 * 28, Math.max(24, Math.floor(parsed)));
+}
+
 export function parseDashboardPublishArgs(args?: string): { windowHours: number; force: boolean } {
   const tokens = (args ?? "")
     .trim()
@@ -1691,6 +1699,38 @@ async function handleOpsDashboardPublishCommand(
   ]);
 }
 
+async function handleOpsWeeklyDigestCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const windowHours = parseWeeklyWindowHoursArg(args);
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: "/api/ops/digest/weekly",
+    body: { windowHours },
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops weekly digest failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const summary = asRecord(payload.summary);
+  const totals = asRecord(summary.totals);
+  const snapshot = asRecord(payload.snapshot);
+  const alerts = Array.isArray(snapshot.alerts) ? snapshot.alerts.length : 0;
+  return asReply([
+    "ARI ops weekly digest export",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
+    `markdownPath: ${asTrimmedString(payload.markdownPath) ?? "n/a"}`,
+    `csvPath: ${asTrimmedString(payload.csvPath) ?? "n/a"}`,
+    `days=${formatNumber(summary.dayCount, 0)} p1Runs=${formatNumber(totals.p1Runs, 0)} p2Scans=${formatNumber(totals.p2Scans, 0)} p2Demos=${formatNumber(totals.p2Demos, 0)}`,
+    `escalations sent/suppressed=${formatNumber(totals.escalationsSent, 0)}/${formatNumber(totals.escalationsSuppressed, 0)} canary runs/fail/ack=${formatNumber(totals.canaryRuns, 0)}/${formatNumber(totals.canaryFailures, 0)}/${formatNumber(totals.canaryAcks, 0)}`,
+    `dashboard publish/fail=${formatNumber(totals.dashboardPublishes, 0)}/${formatNumber(totals.dashboardPublishFailures, 0)} currentAlerts=${formatNumber(alerts, 0)}`,
+    "usage: /ari-ops-weekly [window-hours]",
+  ]);
+}
+
 async function handleOpsAutopublishCommand(
   controller: OpsAutopublishController,
   args?: string,
@@ -2301,6 +2341,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsDashboardPublishCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-weekly",
+    description: "Export weekly ops digest artifacts (optional: <window-hours>)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsWeeklyDigestCommand(runtime, ctx.args),
     }),
   });
 
