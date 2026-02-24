@@ -1413,13 +1413,15 @@ async function handleOpsQueuesCommand(runtime: BridgeRuntimeConfig): Promise<Rep
   const payload = asRecord(result.data);
   const p1 = asRecord(payload.p1);
   const p2 = asRecord(payload.p2);
+  const p1Holds = asRecord(p1.holdReasons);
+  const p2Holds = asRecord(p2.holdReasons);
   const thresholds = asRecord(payload.thresholds);
 
   return asReply([
     "ARI queue summary",
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"}`,
-    `p1: total=${formatNumber(p1.total, 0)} pending=${formatNumber(p1.pendingApproval, 0)} stale=${formatNumber(p1.stalePending, 0)} high=${formatNumber(p1.highPriorityPending, 0)} approved=${formatNumber(p1.approved, 0)} rejected=${formatNumber(p1.rejected, 0)} oldestPendingMin=${formatNumber(p1.oldestPendingMinutes, 0)}`,
-    `p2: total=${formatNumber(p2.total, 0)} draft=${formatNumber(p2.draft, 0)} stale=${formatNumber(p2.staleDraft, 0)} high=${formatNumber(p2.highPriorityPending, 0)} queued=${formatNumber(p2.queued, 0)} approved=${formatNumber(p2.approved, 0)} sent=${formatNumber(p2.sent, 0)} rejected=${formatNumber(p2.rejected, 0)} oldestDraftMin=${formatNumber(p2.oldestDraftMinutes, 0)}`,
+    `p1: total=${formatNumber(p1.total, 0)} pending=${formatNumber(p1.pendingApproval, 0)} stale=${formatNumber(p1.stalePending, 0)} high=${formatNumber(p1.highPriorityPending, 0)} approved=${formatNumber(p1.approved, 0)} rejected=${formatNumber(p1.rejected, 0)} oldestPendingMin=${formatNumber(p1.oldestPendingMinutes, 0)} holds(gov/budget/dataGap)=${formatNumber(p1Holds.governanceHold, 0)}/${formatNumber(p1Holds.budgetHold, 0)}/${formatNumber(p1Holds.dataGap, 0)}`,
+    `p2: total=${formatNumber(p2.total, 0)} draft=${formatNumber(p2.draft, 0)} stale=${formatNumber(p2.staleDraft, 0)} high=${formatNumber(p2.highPriorityPending, 0)} queued=${formatNumber(p2.queued, 0)} approved=${formatNumber(p2.approved, 0)} sent=${formatNumber(p2.sent, 0)} rejected=${formatNumber(p2.rejected, 0)} oldestDraftMin=${formatNumber(p2.oldestDraftMinutes, 0)} holds(gov/budget/dataGap)=${formatNumber(p2Holds.governanceHold, 0)}/${formatNumber(p2Holds.budgetHold, 0)}/${formatNumber(p2Holds.dataGap, 0)}`,
     `thresholds: p1 stale=${formatNumber(thresholds.p1StaleMinutes, 0)}m critical=${formatNumber(thresholds.p1CriticalMinutes, 0)}m | p2 stale=${formatNumber(thresholds.p2StaleMinutes, 0)}m critical=${formatNumber(thresholds.p2CriticalMinutes, 0)}m`,
   ]);
 }
