@@ -974,7 +974,11 @@ async function handleP2TopCommand(
     const name = asTrimmedString(lead.businessName) ?? "unknown";
     const score = formatNumber(lead.score, 3);
     const leadId = asTrimmedString(lead.leadId) ?? "n/a";
-    lines.push(`${idx + 1}. ${name} | score=${score} | leadId=${leadId}`);
+    const vertical = asTrimmedString(lead.verticalSegment) ?? "n/a";
+    const locality = asTrimmedString(lead.localityTier) ?? "n/a";
+    lines.push(
+      `${idx + 1}. ${name} | score=${score} | vertical=${vertical} | locality=${locality} | leadId=${leadId}`,
+    );
   }
 
   return asReply(lines);
