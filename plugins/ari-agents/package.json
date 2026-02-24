@@ -1,9 +1,9 @@
 {
   "name": "@ari/agents",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI swarm coordination — DAG dependency resolution + 3-lane execution pods",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "openclaw": "workspace:*"
   },
@@ -13,9 +13,6 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ],
-    "hooks": {
-      "agent_lifecycle": "./src/coordinator.ts"
-    }
+    ]
   }
 }

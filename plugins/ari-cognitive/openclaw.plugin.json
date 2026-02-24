@@ -1,0 +1,10 @@
+{
+  "id": "ari-cognitive",
+  "name": "ari-cognitive",
+  "description": "ari-cognitive plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

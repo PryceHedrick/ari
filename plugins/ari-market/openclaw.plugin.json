@@ -1,0 +1,10 @@
+{
+  "id": "ari-market",
+  "name": "ari-market",
+  "description": "ari-market plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

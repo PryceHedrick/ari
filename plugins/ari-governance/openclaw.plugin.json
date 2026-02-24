@@ -1,0 +1,10 @@
+{
+  "id": "ari-governance",
+  "name": "ari-governance",
+  "description": "ari-governance plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

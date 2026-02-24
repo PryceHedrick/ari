@@ -1,0 +1,10 @@
+{
+  "id": "ari-briefings",
+  "name": "ari-briefings",
+  "description": "ari-briefings plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

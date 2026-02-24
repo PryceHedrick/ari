@@ -1,0 +1,10 @@
+{
+  "id": "ari-agents",
+  "name": "ari-agents",
+  "description": "ari-agents plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "ari-voice",
+  "name": "ari-voice",
+  "description": "ari-voice plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

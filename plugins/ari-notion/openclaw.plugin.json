@@ -1,0 +1,10 @@
+{
+  "id": "ari-notion",
+  "name": "ari-notion",
+  "description": "ari-notion plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

@@ -1,5 +1,6 @@
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { registerCognitiveHooks } from "./src/cognitive-prompt.js";
 
 /**
  * ARI Cognitive Plugin — LOGOS/ETHOS/PATHOS reasoning framework.
@@ -21,13 +22,12 @@ import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
  * Source: src/cognition/ (logos.ts, ethos.ts, pathos.ts, synthesis.ts)
  */
 const plugin = {
-  id: 'ari-cognitive',
-  name: 'ARI Cognitive',
-  description: 'LOGOS/ETHOS/PATHOS reasoning framework injected into every agent context',
+  id: "ari-cognitive",
+  name: "ARI Cognitive",
+  description: "LOGOS/ETHOS/PATHOS reasoning framework injected into every agent context",
   configSchema: emptyPluginConfigSchema(),
-  register(_api: OpenClawPluginApi): void {
-    // Phase 3: api.registerHook('system_prompt_builder', injectCognitiveFramework)
-    // Phase 3: register 9 cognitive tools
+  register(api: OpenClawPluginApi): void {
+    registerCognitiveHooks(api);
   },
 };
 

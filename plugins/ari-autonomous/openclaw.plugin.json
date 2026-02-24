@@ -1,0 +1,10 @@
+{
+  "id": "ari-autonomous",
+  "name": "ari-autonomous",
+  "description": "ari-autonomous plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

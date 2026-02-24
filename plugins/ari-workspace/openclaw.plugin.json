@@ -1,0 +1,10 @@
+{
+  "id": "ari-workspace",
+  "name": "ari-workspace",
+  "description": "ari-workspace plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}
