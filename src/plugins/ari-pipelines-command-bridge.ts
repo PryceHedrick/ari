@@ -783,6 +783,34 @@ async function handleOpsDashboardCommand(
   ]);
 }
 
+async function handleOpsDashboardPublishCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const windowHours = parseWindowHoursArg(args);
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: "/api/ops/dashboard/publish",
+    body: { windowHours },
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops dashboard publish failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const published = payload.published === true;
+  const webhookConfigured = payload.webhookConfigured === true;
+  return asReply([
+    "ARI ops dashboard publish",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
+    `artifactPath: ${asTrimmedString(payload.artifactPath) ?? "n/a"}`,
+    `webhookConfigured: ${String(webhookConfigured)}`,
+    `published: ${String(published)}`,
+    `status: ${formatNumber(payload.publishStatus, 0)} error: ${asTrimmedString(payload.publishError) ?? "none"}`,
+  ]);
+}
+
 async function handleP1RunCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -1217,6 +1245,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsDashboardCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-dashboard-publish",
+    description: "Build + publish ops dashboard artifact via configured webhook",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsDashboardPublishCommand(runtime, ctx.args),
     }),
   });
 
