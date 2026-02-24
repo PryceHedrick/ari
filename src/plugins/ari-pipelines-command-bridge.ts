@@ -752,6 +752,37 @@ async function handleOpsSlaCommand(
   return asReply(lines);
 }
 
+async function handleOpsDashboardCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const windowHours = parseWindowHoursArg(args);
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "POST",
+    path: "/api/ops/dashboard/build",
+    body: { windowHours },
+  });
+  if (!result.ok) {
+    return asReply([`ARI ops dashboard build failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const snapshot = asRecord(payload.snapshot);
+  const pipelines = asRecord(snapshot.pipelines);
+  const p1 = asRecord(pipelines.p1);
+  const p2 = asRecord(pipelines.p2);
+  const alerts = Array.isArray(snapshot.alerts) ? snapshot.alerts.length : 0;
+
+  return asReply([
+    "ARI ops dashboard build complete",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
+    `artifactPath: ${asTrimmedString(payload.artifactPath) ?? "n/a"}`,
+    `p1Runs=${formatNumber(p1.totalRuns, 0)} p1SuccessRate=${formatNumber(p1.successRate, 3)} p2Runs=${formatNumber(p2.totalRuns, 0)} p2SuccessRate=${formatNumber(p2.successRate, 3)}`,
+    `alerts=${alerts}`,
+  ]);
+}
+
 async function handleP1RunCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -1175,6 +1206,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsSlaCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-dashboard",
+    description: "Build dashboard artifact from ops telemetry (optional: <window-hours>)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsDashboardCommand(runtime, ctx.args),
     }),
   });
 
