@@ -12,6 +12,14 @@ type BridgeRetryConfig = {
   statusCodes: Set<number>;
 };
 
+type BridgeOpsAutopublishConfig = {
+  enabled: boolean;
+  intervalMinutes: number;
+  windowHours: number;
+  startupDelaySeconds: number;
+  force: boolean;
+};
+
 export type BridgeRuntimeConfig = {
   apiBaseUrl: string;
   apiToken?: string;
@@ -19,11 +27,35 @@ export type BridgeRuntimeConfig = {
   retry: BridgeRetryConfig;
   mutationRetryAttempts: number;
   approvalRetryAttempts: number;
+  opsAutopublish: BridgeOpsAutopublishConfig;
   strictRouting: boolean;
   p1Channels: Set<string>;
   p2Channels: Set<string>;
   statusChannels: Set<string>;
   logger: OpenClawPluginApi["logger"];
+};
+
+type OpsAutopublishStatus = {
+  enabled: boolean;
+  active: boolean;
+  inFlight: boolean;
+  intervalMinutes: number;
+  windowHours: number;
+  startupDelaySeconds: number;
+  force: boolean;
+  totalRuns: number;
+  totalPublished: number;
+  totalSkipped: number;
+  totalFailures: number;
+  consecutiveFailures: number;
+  lastTrigger?: string;
+  lastRunAt?: string;
+  lastCompletedAt?: string;
+  lastPublishedAt?: string;
+  lastGatePassed?: boolean;
+  lastPublishStatus?: number;
+  lastPublishError?: string;
+  nextRunAt?: string;
 };
 
 type HttpMethod = "GET" | "POST";
@@ -49,6 +81,9 @@ const DEFAULT_RETRY_MAX_DELAY_MS = 3_000;
 const DEFAULT_RETRY_STATUS_CODES = new Set<number>([408, 425, 429, 500, 502, 503, 504]);
 const DEFAULT_MUTATION_RETRY_ATTEMPTS = 1;
 const DEFAULT_APPROVAL_RETRY_ATTEMPTS = 1;
+const DEFAULT_OPS_AUTOPUBLISH_INTERVAL_MINUTES = 180;
+const DEFAULT_OPS_AUTOPUBLISH_WINDOW_HOURS = 24;
+const DEFAULT_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS = 45;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -97,10 +132,20 @@ function asBoolean(value: unknown): boolean | undefined {
   }
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
-    if (normalized === "true") {
+    if (
+      normalized === "true" ||
+      normalized === "1" ||
+      normalized === "yes" ||
+      normalized === "on"
+    ) {
       return true;
     }
-    if (normalized === "false") {
+    if (
+      normalized === "false" ||
+      normalized === "0" ||
+      normalized === "no" ||
+      normalized === "off"
+    ) {
       return false;
     }
   }
@@ -255,6 +300,7 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   const pluginConfig = asRecord(api.pluginConfig);
   const routing = asRecord(pluginConfig.routing);
   const retryConfig = asRecord(pluginConfig.retry);
+  const opsAutopublishConfig = asRecord(pluginConfig.opsAutopublish);
 
   const apiBaseUrl =
     asTrimmedString(pluginConfig.apiBaseUrl) ??
@@ -294,6 +340,27 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
       : envRetryStatuses.size > 0
         ? envRetryStatuses
         : new Set(DEFAULT_RETRY_STATUS_CODES);
+  const opsAutopublishEnabled =
+    asBoolean(opsAutopublishConfig.enabled) ??
+    asBoolean(readEnv("ARI_OPS_AUTOPUBLISH_ENABLED")) ??
+    false;
+  const opsAutopublishIntervalMinutes =
+    asPositiveInt(opsAutopublishConfig.intervalMinutes) ??
+    asPositiveInt(readEnv("ARI_OPS_AUTOPUBLISH_INTERVAL_MINUTES")) ??
+    DEFAULT_OPS_AUTOPUBLISH_INTERVAL_MINUTES;
+  const opsAutopublishWindowHoursRaw =
+    asPositiveInt(opsAutopublishConfig.windowHours) ??
+    asPositiveInt(readEnv("ARI_OPS_AUTOPUBLISH_WINDOW_HOURS")) ??
+    DEFAULT_OPS_AUTOPUBLISH_WINDOW_HOURS;
+  const opsAutopublishWindowHours = Math.max(1, Math.min(168, opsAutopublishWindowHoursRaw));
+  const opsAutopublishStartupDelaySeconds =
+    asNonNegativeInt(opsAutopublishConfig.startupDelaySeconds) ??
+    asNonNegativeInt(readEnv("ARI_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS")) ??
+    DEFAULT_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS;
+  const opsAutopublishForce =
+    asBoolean(opsAutopublishConfig.force) ??
+    asBoolean(readEnv("ARI_OPS_AUTOPUBLISH_FORCE")) ??
+    false;
   const strictRouting = asBoolean(routing.strict) ?? true;
 
   const resolved: BridgeRuntimeConfig = {
@@ -308,6 +375,13 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
     },
     mutationRetryAttempts,
     approvalRetryAttempts,
+    opsAutopublish: {
+      enabled: opsAutopublishEnabled,
+      intervalMinutes: opsAutopublishIntervalMinutes,
+      windowHours: opsAutopublishWindowHours,
+      startupDelaySeconds: opsAutopublishStartupDelaySeconds,
+      force: opsAutopublishForce,
+    },
     strictRouting,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),
@@ -614,6 +688,211 @@ export function parseDashboardPublishArgs(args?: string): { windowHours: number;
   return { windowHours, force };
 }
 
+function formatMinutes(value: unknown): string {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return "n/a";
+  }
+  return `${Math.floor(numeric)}m`;
+}
+
+function parseOpsAutopublishArgs(args?: string): {
+  action: "status" | "run";
+  force?: boolean;
+  windowHours?: number;
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  if (tokens.length === 0 || tokens[0] === "status") {
+    return { action: "status" };
+  }
+
+  if (tokens[0] !== "run") {
+    return { action: "status" };
+  }
+
+  let force: boolean | undefined;
+  let windowHours: number | undefined;
+  for (const token of tokens.slice(1)) {
+    if (token === "force" || token === "--force") {
+      force = true;
+      continue;
+    }
+    const parsed = Number(token);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      windowHours = Math.min(168, Math.max(1, Math.floor(parsed)));
+    }
+  }
+
+  return { action: "run", force, windowHours };
+}
+
+type OpsAutopublishController = {
+  start: () => void;
+  stop: () => void;
+  runNow: (params?: { force?: boolean; windowHours?: number; trigger?: string }) => Promise<void>;
+  getStatus: () => OpsAutopublishStatus;
+};
+
+function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopublishController {
+  const status: OpsAutopublishStatus = {
+    enabled: runtime.opsAutopublish.enabled,
+    active: false,
+    inFlight: false,
+    intervalMinutes: runtime.opsAutopublish.intervalMinutes,
+    windowHours: runtime.opsAutopublish.windowHours,
+    startupDelaySeconds: runtime.opsAutopublish.startupDelaySeconds,
+    force: runtime.opsAutopublish.force,
+    totalRuns: 0,
+    totalPublished: 0,
+    totalSkipped: 0,
+    totalFailures: 0,
+    consecutiveFailures: 0,
+  };
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = true;
+
+  const clearTimer = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    status.nextRunAt = undefined;
+  };
+
+  const scheduleNext = (delayMs: number) => {
+    if (stopped || !status.enabled) {
+      return;
+    }
+    const safeDelayMs = Math.max(1_000, Math.floor(delayMs));
+    clearTimer();
+    status.nextRunAt = new Date(Date.now() + safeDelayMs).toISOString();
+    timer = setTimeout(() => {
+      void runNow({ trigger: "interval" });
+    }, safeDelayMs);
+  };
+
+  const runNow = async (params?: {
+    force?: boolean;
+    windowHours?: number;
+    trigger?: string;
+  }): Promise<void> => {
+    const manualTrigger = (params?.trigger ?? "").startsWith("manual");
+    if (status.inFlight) {
+      return;
+    }
+    if ((!status.enabled || stopped) && !manualTrigger) {
+      return;
+    }
+
+    clearTimer();
+    status.inFlight = true;
+    status.lastTrigger = params?.trigger ?? "manual";
+    status.lastRunAt = new Date().toISOString();
+    status.totalRuns += 1;
+    const force = params?.force ?? status.force;
+    const windowHours = params?.windowHours ?? status.windowHours;
+
+    try {
+      const result = await callAriPipelinesApi({
+        runtime,
+        method: "POST",
+        path: "/api/ops/dashboard/publish",
+        body: { windowHours, force },
+      });
+
+      status.lastCompletedAt = new Date().toISOString();
+
+      if (!result.ok) {
+        status.totalFailures += 1;
+        status.consecutiveFailures += 1;
+        status.lastPublishError = result.error ?? "request_failed";
+        status.lastPublishStatus = result.status;
+        runtime.logger.warn(
+          `[ari-autonomous] ops dashboard autopublish failed: ${status.lastPublishError}`,
+        );
+      } else {
+        const payload = asRecord(result.data);
+        const published = payload.published === true;
+        const publishError = asTrimmedString(payload.publishError);
+        const publishStatus = asPositiveInt(payload.publishStatus);
+        status.lastGatePassed = payload.gatePassed === true;
+        status.lastPublishError = publishError;
+        status.lastPublishStatus = publishStatus;
+
+        if (published) {
+          status.totalPublished += 1;
+          status.consecutiveFailures = 0;
+          status.lastPublishedAt = status.lastCompletedAt;
+          runtime.logger.info("[ari-autonomous] ops dashboard autopublish succeeded");
+        } else {
+          status.totalSkipped += 1;
+          if (publishError && publishError !== "publish_skipped_by_gate") {
+            status.totalFailures += 1;
+            status.consecutiveFailures += 1;
+            runtime.logger.warn(
+              `[ari-autonomous] ops dashboard autopublish skipped with error: ${publishError}`,
+            );
+          } else {
+            status.consecutiveFailures = 0;
+            runtime.logger.info("[ari-autonomous] ops dashboard autopublish skipped by gate");
+          }
+        }
+      }
+    } catch (error) {
+      status.totalFailures += 1;
+      status.consecutiveFailures += 1;
+      status.lastCompletedAt = new Date().toISOString();
+      status.lastPublishError =
+        error instanceof Error && error.message ? error.message : "unexpected_error";
+      runtime.logger.warn(
+        `[ari-autonomous] ops dashboard autopublish crashed: ${status.lastPublishError}`,
+      );
+    } finally {
+      status.inFlight = false;
+      if (!stopped && status.enabled) {
+        scheduleNext(status.intervalMinutes * 60_000);
+      }
+    }
+  };
+
+  return {
+    start: () => {
+      if (!status.enabled) {
+        runtime.logger.info("[ari-autonomous] ops dashboard autopublish disabled");
+        return;
+      }
+      if (!stopped) {
+        return;
+      }
+      stopped = false;
+      status.active = true;
+      const delayMs = Math.max(0, status.startupDelaySeconds * 1_000);
+      if (delayMs === 0) {
+        void runNow({ trigger: "startup" });
+      } else {
+        scheduleNext(delayMs);
+      }
+      runtime.logger.info(
+        `[ari-autonomous] ops dashboard autopublish started interval=${status.intervalMinutes}m window=${status.windowHours}h force=${String(status.force)}`,
+      );
+    },
+    stop: () => {
+      stopped = true;
+      status.active = false;
+      status.inFlight = false;
+      clearTimer();
+      runtime.logger.info("[ari-autonomous] ops dashboard autopublish stopped");
+    },
+    runNow: async (params) => runNow(params),
+    getStatus: () => ({ ...status }),
+  };
+}
+
 function parseQueueArgs(params: { args?: string; validStatuses: Set<string> }): {
   limit: number;
   status?: string;
@@ -832,6 +1111,32 @@ async function handleOpsDashboardPublishCommand(
     `webhookConfigured: ${String(webhookConfigured)}`,
     `published: ${String(published)}`,
     `status: ${formatNumber(payload.publishStatus, 0)} error: ${asTrimmedString(payload.publishError) ?? "none"}`,
+  ]);
+}
+
+async function handleOpsAutopublishCommand(
+  controller: OpsAutopublishController,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseOpsAutopublishArgs(args);
+
+  if (parsed.action === "run") {
+    await controller.runNow({
+      force: parsed.force,
+      windowHours: parsed.windowHours,
+      trigger: "manual-command",
+    });
+  }
+
+  const status = controller.getStatus();
+  return asReply([
+    `ARI ops autopublish${parsed.action === "run" ? " run complete" : " status"}`,
+    `enabled=${String(status.enabled)} active=${String(status.active)} inFlight=${String(status.inFlight)} force=${String(status.force)}`,
+    `interval=${formatMinutes(status.intervalMinutes)} window=${formatNumber(status.windowHours, 0)}h startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s`,
+    `runs=${formatNumber(status.totalRuns, 0)} published=${formatNumber(status.totalPublished, 0)} skipped=${formatNumber(status.totalSkipped, 0)} failures=${formatNumber(status.totalFailures, 0)} consecutiveFailures=${formatNumber(status.consecutiveFailures, 0)}`,
+    `lastRunAt=${status.lastRunAt ?? "n/a"} lastCompletedAt=${status.lastCompletedAt ?? "n/a"} lastPublishedAt=${status.lastPublishedAt ?? "n/a"} nextRunAt=${status.nextRunAt ?? "n/a"}`,
+    `lastGatePassed=${typeof status.lastGatePassed === "boolean" ? String(status.lastGatePassed) : "n/a"} lastStatus=${formatNumber(status.lastPublishStatus, 0)} lastError=${status.lastPublishError ?? "none"}`,
+    "usage: /ari-ops-autopublish [status|run [window-hours] [force]]",
   ]);
 }
 
@@ -1223,10 +1528,20 @@ function withAccessControl(params: {
 
 export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void {
   const runtime = buildRuntimeConfig(api);
+  const opsAutopublish = createOpsAutopublishController(runtime);
 
   api.logger.info(
     `[ari-autonomous] command bridge active: baseUrl=${runtime.apiBaseUrl} strictRouting=${runtime.strictRouting}`,
   );
+  api.registerService({
+    id: "ari-autonomous-ops-dashboard-autopublish",
+    start: () => {
+      opsAutopublish.start();
+    },
+    stop: () => {
+      opsAutopublish.stop();
+    },
+  });
 
   api.registerCommand({
     name: "ari-status",
@@ -1280,6 +1595,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsDashboardPublishCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-autopublish",
+    description: "Show or run ops dashboard autopublish scheduler (optional: run <hours> [force])",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsAutopublishCommand(opsAutopublish, ctx.args),
     }),
   });
 

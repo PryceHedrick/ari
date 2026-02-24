@@ -59,6 +59,13 @@
             maxDelayMs: "${ARI_PIPELINES_API_RETRY_MAX_DELAY_MS:-3000}",
             statusCodes: "${ARI_PIPELINES_API_RETRY_STATUS_CODES:-408,425,429,500,502,503,504}",
           },
+          opsAutopublish: {
+            enabled: "${ARI_OPS_AUTOPUBLISH_ENABLED:-false}",
+            intervalMinutes: "${ARI_OPS_AUTOPUBLISH_INTERVAL_MINUTES:-180}",
+            windowHours: "${ARI_OPS_AUTOPUBLISH_WINDOW_HOURS:-24}",
+            startupDelaySeconds: "${ARI_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS:-45}",
+            force: "${ARI_OPS_AUTOPUBLISH_FORCE:-false}",
+          },
           routing: {
             strict: true,
             p1ChannelIds: [

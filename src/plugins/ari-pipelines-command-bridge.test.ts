@@ -23,6 +23,13 @@ function buildRuntime(overrides?: Partial<BridgeRuntimeConfig>): BridgeRuntimeCo
     },
     mutationRetryAttempts: 1,
     approvalRetryAttempts: 1,
+    opsAutopublish: {
+      enabled: false,
+      intervalMinutes: 180,
+      windowHours: 24,
+      startupDelaySeconds: 45,
+      force: false,
+    },
     strictRouting: true,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),
