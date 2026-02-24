@@ -1,17 +1,27 @@
 import type { ReplyPayload } from "../auto-reply/types.js";
 import type { OpenClawConfig } from "../config/config.js";
+import { sleep } from "../utils.js";
 import type { OpenClawPluginApi, PluginCommandContext } from "./types.js";
 
 type CommandScope = "status" | "p1" | "p2";
+
+type BridgeRetryConfig = {
+  attempts: number;
+  minDelayMs: number;
+  maxDelayMs: number;
+  statusCodes: Set<number>;
+};
 
 export type BridgeRuntimeConfig = {
   apiBaseUrl: string;
   apiToken?: string;
   timeoutMs: number;
+  retry: BridgeRetryConfig;
   strictRouting: boolean;
   p1Channels: Set<string>;
   p2Channels: Set<string>;
   statusChannels: Set<string>;
+  logger: OpenClawPluginApi["logger"];
 };
 
 type HttpMethod = "GET" | "POST";
@@ -31,6 +41,10 @@ type CommandAccessDecision = {
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
 const DEFAULT_TIMEOUT_MS = 20_000;
+const DEFAULT_RETRY_ATTEMPTS = 3;
+const DEFAULT_RETRY_MIN_DELAY_MS = 350;
+const DEFAULT_RETRY_MAX_DELAY_MS = 3_000;
+const DEFAULT_RETRY_STATUS_CODES = new Set<number>([408, 425, 429, 500, 502, 503, 504]);
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -60,6 +74,19 @@ function asPositiveInt(value: unknown): number | undefined {
   return undefined;
 }
 
+function asNonNegativeInt(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.floor(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.floor(parsed);
+    }
+  }
+  return undefined;
+}
+
 function asBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") {
     return value;
@@ -78,6 +105,74 @@ function asBoolean(value: unknown): boolean | undefined {
 
 function readEnv(name: string): string | undefined {
   return asTrimmedString(process.env[name]);
+}
+
+function parseStatusCode(candidate: unknown): number | undefined {
+  const parsed =
+    typeof candidate === "number"
+      ? candidate
+      : typeof candidate === "string"
+        ? Number(candidate.trim())
+        : undefined;
+  if (parsed === undefined || !Number.isFinite(parsed)) {
+    return undefined;
+  }
+  const rounded = Math.floor(parsed);
+  if (rounded < 100 || rounded > 599) {
+    return undefined;
+  }
+  return rounded;
+}
+
+export function parseRetryStatusCodes(value: unknown): Set<number> {
+  const set = new Set<number>();
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const code = parseStatusCode(entry);
+      if (code !== undefined) {
+        set.add(code);
+      }
+    }
+    return set;
+  }
+
+  if (typeof value === "string") {
+    for (const part of value.split(",")) {
+      const code = parseStatusCode(part);
+      if (code !== undefined) {
+        set.add(code);
+      }
+    }
+    return set;
+  }
+
+  const single = parseStatusCode(value);
+  if (single !== undefined) {
+    set.add(single);
+  }
+  return set;
+}
+
+export function computeRetryDelayMs(params: {
+  attempt: number;
+  minDelayMs: number;
+  maxDelayMs: number;
+}): number {
+  const step = Math.max(0, Math.floor(params.attempt) - 1);
+  const baseDelay = params.minDelayMs * 2 ** step;
+  return Math.max(params.minDelayMs, Math.min(params.maxDelayMs, Math.round(baseDelay)));
+}
+
+function parseAgeMinutesFromIso(iso: string | undefined): number {
+  if (!iso) {
+    return 0;
+  }
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor((Date.now() - ts) / 60_000));
 }
 
 export function normalizeChannelId(value: unknown): string | undefined {
@@ -155,6 +250,7 @@ function deriveRoutingChannelsFromConfig(
 function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   const pluginConfig = asRecord(api.pluginConfig);
   const routing = asRecord(pluginConfig.routing);
+  const retryConfig = asRecord(pluginConfig.retry);
 
   const apiBaseUrl =
     asTrimmedString(pluginConfig.apiBaseUrl) ??
@@ -165,16 +261,44 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
     asPositiveInt(pluginConfig.timeoutMs) ??
     asPositiveInt(readEnv("ARI_PIPELINES_API_TIMEOUT_MS")) ??
     DEFAULT_TIMEOUT_MS;
+  const retryAttempts =
+    asPositiveInt(retryConfig.attempts) ??
+    asPositiveInt(readEnv("ARI_PIPELINES_API_RETRY_ATTEMPTS")) ??
+    DEFAULT_RETRY_ATTEMPTS;
+  const retryMinDelayMs =
+    asNonNegativeInt(retryConfig.minDelayMs) ??
+    asNonNegativeInt(readEnv("ARI_PIPELINES_API_RETRY_MIN_DELAY_MS")) ??
+    DEFAULT_RETRY_MIN_DELAY_MS;
+  const retryMaxDelayMsRaw =
+    asNonNegativeInt(retryConfig.maxDelayMs) ??
+    asNonNegativeInt(readEnv("ARI_PIPELINES_API_RETRY_MAX_DELAY_MS")) ??
+    DEFAULT_RETRY_MAX_DELAY_MS;
+  const retryMaxDelayMs = Math.max(retryMinDelayMs, retryMaxDelayMsRaw);
+  const configuredRetryStatuses = parseRetryStatusCodes(retryConfig.statusCodes);
+  const envRetryStatuses = parseRetryStatusCodes(readEnv("ARI_PIPELINES_API_RETRY_STATUS_CODES"));
+  const resolvedRetryStatuses =
+    configuredRetryStatuses.size > 0
+      ? configuredRetryStatuses
+      : envRetryStatuses.size > 0
+        ? envRetryStatuses
+        : new Set(DEFAULT_RETRY_STATUS_CODES);
   const strictRouting = asBoolean(routing.strict) ?? true;
 
   const resolved: BridgeRuntimeConfig = {
     apiBaseUrl,
     apiToken,
     timeoutMs,
+    retry: {
+      attempts: retryAttempts,
+      minDelayMs: retryMinDelayMs,
+      maxDelayMs: retryMaxDelayMs,
+      statusCodes: resolvedRetryStatuses,
+    },
     strictRouting,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),
     statusChannels: new Set<string>(),
+    logger: api.logger,
   };
 
   addChannelSet(resolved.p1Channels, routing.p1ChannelIds);
@@ -269,6 +393,53 @@ async function callAriPipelinesApi(params: {
   path: string;
   body?: Record<string, unknown>;
 }): Promise<RequestResult> {
+  const attempts = Math.max(1, params.runtime.retry.attempts);
+  let lastResult: RequestResult | undefined;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = await callAriPipelinesApiOnce(params);
+    if (result.ok) {
+      if (attempt > 1) {
+        params.runtime.logger.info(
+          `[ari-autonomous] ${params.method} ${params.path} recovered on attempt ${attempt}/${attempts}`,
+        );
+      }
+      return result;
+    }
+
+    lastResult = result;
+    const retryable =
+      attempt < attempts &&
+      (result.status ? params.runtime.retry.statusCodes.has(result.status) : true);
+    if (!retryable) {
+      return result;
+    }
+
+    const delayMs = computeRetryDelayMs({
+      attempt,
+      minDelayMs: params.runtime.retry.minDelayMs,
+      maxDelayMs: params.runtime.retry.maxDelayMs,
+    });
+    params.runtime.logger.warn(
+      `[ari-autonomous] ${params.method} ${params.path} retry ${attempt + 1}/${attempts} in ${delayMs}ms after error: ${result.error ?? "unknown error"}`,
+    );
+    await sleep(delayMs);
+  }
+
+  return (
+    lastResult ?? {
+      ok: false,
+      error: "request failed without response",
+    }
+  );
+}
+
+async function callAriPipelinesApiOnce(params: {
+  runtime: BridgeRuntimeConfig;
+  method: HttpMethod;
+  path: string;
+  body?: Record<string, unknown>;
+}): Promise<RequestResult> {
   const url = new URL(
     params.path,
     params.runtime.apiBaseUrl.endsWith("/")
@@ -334,6 +505,14 @@ function formatNumber(value: unknown, digits = 2): string {
     return "n/a";
   }
   return numeric.toFixed(digits);
+}
+
+function formatQueuePriority(value: unknown): string {
+  const priority = asTrimmedString(value)?.toLowerCase();
+  if (priority === "high" || priority === "medium" || priority === "low") {
+    return priority;
+  }
+  return "n/a";
 }
 
 function parseSeedsFromArgs(args?: string): string[] {
@@ -458,12 +637,14 @@ async function handleOpsQueuesCommand(runtime: BridgeRuntimeConfig): Promise<Rep
   const payload = asRecord(result.data);
   const p1 = asRecord(payload.p1);
   const p2 = asRecord(payload.p2);
+  const thresholds = asRecord(payload.thresholds);
 
   return asReply([
     "ARI queue summary",
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"}`,
-    `p1: total=${formatNumber(p1.total, 0)} pending=${formatNumber(p1.pendingApproval, 0)} approved=${formatNumber(p1.approved, 0)} rejected=${formatNumber(p1.rejected, 0)} oldestPendingMin=${formatNumber(p1.oldestPendingMinutes, 0)}`,
-    `p2: total=${formatNumber(p2.total, 0)} draft=${formatNumber(p2.draft, 0)} queued=${formatNumber(p2.queued, 0)} approved=${formatNumber(p2.approved, 0)} sent=${formatNumber(p2.sent, 0)} rejected=${formatNumber(p2.rejected, 0)} oldestDraftMin=${formatNumber(p2.oldestDraftMinutes, 0)}`,
+    `p1: total=${formatNumber(p1.total, 0)} pending=${formatNumber(p1.pendingApproval, 0)} stale=${formatNumber(p1.stalePending, 0)} high=${formatNumber(p1.highPriorityPending, 0)} approved=${formatNumber(p1.approved, 0)} rejected=${formatNumber(p1.rejected, 0)} oldestPendingMin=${formatNumber(p1.oldestPendingMinutes, 0)}`,
+    `p2: total=${formatNumber(p2.total, 0)} draft=${formatNumber(p2.draft, 0)} stale=${formatNumber(p2.staleDraft, 0)} high=${formatNumber(p2.highPriorityPending, 0)} queued=${formatNumber(p2.queued, 0)} approved=${formatNumber(p2.approved, 0)} sent=${formatNumber(p2.sent, 0)} rejected=${formatNumber(p2.rejected, 0)} oldestDraftMin=${formatNumber(p2.oldestDraftMinutes, 0)}`,
+    `thresholds: p1 stale=${formatNumber(thresholds.p1StaleMinutes, 0)}m critical=${formatNumber(thresholds.p1CriticalMinutes, 0)}m | p2 stale=${formatNumber(thresholds.p2StaleMinutes, 0)}m critical=${formatNumber(thresholds.p2CriticalMinutes, 0)}m`,
   ]);
 }
 
@@ -624,7 +805,12 @@ async function handleP1QueueCommand(
     const id = asTrimmedString(job.id) ?? "n/a";
     const status = asTrimmedString(job.status) ?? "n/a";
     const createdAt = asTrimmedString(job.createdAt) ?? "n/a";
-    lines.push(`${idx + 1}. ${id} | status=${status} | createdAt=${createdAt}`);
+    const ageMinutes = asPositiveInt(job.ageMinutes) ?? parseAgeMinutesFromIso(createdAt);
+    const stale = job.stale === true ? "yes" : "no";
+    const priority = formatQueuePriority(job.priority);
+    lines.push(
+      `${idx + 1}. ${id} | status=${status} | ageMin=${ageMinutes} | stale=${stale} | priority=${priority} | createdAt=${createdAt}`,
+    );
   }
   return asReply(lines);
 }
@@ -723,7 +909,13 @@ async function handleP2QueueCommand(
     const id = asTrimmedString(item.id) ?? "n/a";
     const status = asTrimmedString(item.status) ?? "n/a";
     const leadId = asTrimmedString(item.leadId) ?? "n/a";
-    lines.push(`${idx + 1}. ${id} | leadId=${leadId} | status=${status}`);
+    const createdAt = asTrimmedString(item.createdAt);
+    const ageMinutes = asPositiveInt(item.ageMinutes) ?? parseAgeMinutesFromIso(createdAt);
+    const stale = item.stale === true ? "yes" : "no";
+    const priority = formatQueuePriority(item.priority);
+    lines.push(
+      `${idx + 1}. ${id} | leadId=${leadId} | status=${status} | ageMin=${ageMinutes} | stale=${stale} | priority=${priority}`,
+    );
   }
   return asReply(lines);
 }

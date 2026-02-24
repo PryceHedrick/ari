@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeRetryDelayMs,
   evaluateCommandAccess,
   extractCommandChannelId,
   normalizeChannelId,
+  parseRetryStatusCodes,
   type BridgeRuntimeConfig,
 } from "./ari-pipelines-command-bridge.js";
 import type { PluginCommandContext } from "./types.js";
@@ -11,10 +13,21 @@ function buildRuntime(overrides?: Partial<BridgeRuntimeConfig>): BridgeRuntimeCo
   return {
     apiBaseUrl: "http://127.0.0.1:8787",
     timeoutMs: 20_000,
+    retry: {
+      attempts: 3,
+      minDelayMs: 350,
+      maxDelayMs: 3000,
+      statusCodes: new Set([408, 429, 500]),
+    },
     strictRouting: true,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),
     statusChannels: new Set<string>(),
+    logger: {
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    },
     ...overrides,
   };
 }
@@ -89,5 +102,27 @@ describe("evaluateCommandAccess", () => {
       runtime,
     });
     expect(access.allowed).toBe(true);
+  });
+});
+
+describe("parseRetryStatusCodes", () => {
+  it("parses comma-separated values and ignores invalid entries", () => {
+    expect(
+      Array.from(parseRetryStatusCodes("429, 503, nope, 42, 600")).toSorted((a, b) => a - b),
+    ).toEqual([429, 503]);
+  });
+
+  it("parses numeric arrays", () => {
+    expect(
+      Array.from(parseRetryStatusCodes([408, "500", "bad"])).toSorted((a, b) => a - b),
+    ).toEqual([408, 500]);
+  });
+});
+
+describe("computeRetryDelayMs", () => {
+  it("applies exponential delays and clamps to max", () => {
+    expect(computeRetryDelayMs({ attempt: 1, minDelayMs: 200, maxDelayMs: 2000 })).toBe(200);
+    expect(computeRetryDelayMs({ attempt: 2, minDelayMs: 200, maxDelayMs: 2000 })).toBe(400);
+    expect(computeRetryDelayMs({ attempt: 5, minDelayMs: 200, maxDelayMs: 2000 })).toBe(2000);
   });
 });
