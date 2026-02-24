@@ -1547,6 +1547,7 @@ async function handleOpsSlaCommand(
   const p1 = asRecord(pipelines.p1);
   const p2 = asRecord(pipelines.p2);
   const canary = asRecord(payload.canary);
+  const escalationDigest = asRecord(payload.escalationDigest);
   const adapters = asRecord(payload.adapters);
   const thresholds = asRecord(payload.thresholds);
   const thresholdProviders = asRecord(thresholds.adapterProviders);
@@ -1571,7 +1572,8 @@ async function handleOpsSlaCommand(
     `adapterProviderRetryRate x/reddit/youtube/ebay=${formatNumber(adapterX.retryRate, 3)}/${formatNumber(adapterReddit.retryRate, 3)}/${formatNumber(adapterYouTube.retryRate, 3)}/${formatNumber(adapterEbay.retryRate, 3)}`,
     `thresholds success<${formatNumber(thresholds.successRateWarning, 3)} queueHigh>=${formatNumber(thresholds.queueHighPriorityPendingWarning, 0)} adapterRetry>=${formatNumber(thresholds.adapterRetryRateWarning, 3)} adapterFailureWarn/Crit>=${formatNumber(thresholds.adapterFailureRateWarning, 3)}/${formatNumber(thresholds.adapterFailureRateCritical, 3)}`,
     `thresholdProviderRetryWarn x/reddit/youtube/ebay=${formatNumber(thresholdX.retryRateWarning, 3)}/${formatNumber(thresholdReddit.retryRateWarning, 3)}/${formatNumber(thresholdYouTube.retryRateWarning, 3)}/${formatNumber(thresholdEbay.retryRateWarning, 3)}`,
-    `canary: runs=${formatNumber(canary.totalRuns, 0)} notified=${formatNumber(canary.notifiedRuns, 0)} sent=${formatNumber(canary.sentRuns, 0)} failed=${formatNumber(canary.failedRuns, 0)} sendRate=${formatNumber(canary.sendRate, 3)} failureRate=${formatNumber(canary.failureRate, 3)}`,
+    `canary: runs=${formatNumber(canary.totalRuns, 0)} notified=${formatNumber(canary.notifiedRuns, 0)} sent=${formatNumber(canary.sentRuns, 0)} failed=${formatNumber(canary.failedRuns, 0)} ackCount=${formatNumber(canary.ackCount, 0)} sendRate=${formatNumber(canary.sendRate, 3)} failureRate=${formatNumber(canary.failureRate, 3)}`,
+    `digest: events=${formatNumber(escalationDigest.totalEvents, 0)} sent=${formatNumber(escalationDigest.sentEvents, 0)} failed=${formatNumber(escalationDigest.failedEvents, 0)} suppressed=${formatNumber(escalationDigest.suppressedEvents, 0)}`,
     `budget: remainingUsd=${formatNumber(budget.dailyRemainingUsd, 2)} usedUsd=${formatNumber(budget.dailyUsedUsd, 2)} limitUsd=${formatNumber(budget.dailyLimitUsd, 2)}`,
   ];
 
@@ -1612,6 +1614,7 @@ async function handleOpsDashboardCommand(
   const p1 = asRecord(pipelines.p1);
   const p2 = asRecord(pipelines.p2);
   const canary = asRecord(snapshot.canary);
+  const escalationDigest = asRecord(snapshot.escalationDigest);
   const adapters = asRecord(snapshot.adapters);
   const thresholds = asRecord(snapshot.thresholds);
   const thresholdProviders = asRecord(thresholds.adapterProviders);
@@ -1629,7 +1632,8 @@ async function handleOpsDashboardCommand(
     `adapters requests=${formatNumber(adapters.totalRequests, 0)} failed=${formatNumber(adapters.failedRequests, 0)} retryRate=${formatNumber(adapters.retryRate, 3)} failureRate=${formatNumber(adapters.failureRate, 3)}`,
     `thresholds success<${formatNumber(thresholds.successRateWarning, 3)} queueHigh>=${formatNumber(thresholds.queueHighPriorityPendingWarning, 0)} adapterRetry>=${formatNumber(thresholds.adapterRetryRateWarning, 3)}`,
     `thresholdProviderRetryWarn x/reddit/youtube/ebay=${formatNumber(thresholdX.retryRateWarning, 3)}/${formatNumber(thresholdReddit.retryRateWarning, 3)}/${formatNumber(thresholdYouTube.retryRateWarning, 3)}/${formatNumber(thresholdEbay.retryRateWarning, 3)}`,
-    `canaryRuns=${formatNumber(canary.totalRuns, 0)} canaryFailed=${formatNumber(canary.failedRuns, 0)} canarySendRate=${formatNumber(canary.sendRate, 3)}`,
+    `canaryRuns=${formatNumber(canary.totalRuns, 0)} canaryFailed=${formatNumber(canary.failedRuns, 0)} canaryAcks=${formatNumber(canary.ackCount, 0)} canarySendRate=${formatNumber(canary.sendRate, 3)}`,
+    `digestEvents=${formatNumber(escalationDigest.totalEvents, 0)} digestSent=${formatNumber(escalationDigest.sentEvents, 0)} digestFailed=${formatNumber(escalationDigest.failedEvents, 0)}`,
     `alerts=${alerts}`,
   ]);
 }
@@ -1661,6 +1665,7 @@ async function handleOpsDashboardPublishCommand(
   const p1Holds = asRecord(p1Queue.holdReasons);
   const p2Holds = asRecord(p2Queue.holdReasons);
   const canary = asRecord(snapshot.canary);
+  const escalationDigest = asRecord(snapshot.escalationDigest);
   const adapters = asRecord(snapshot.adapters);
   const thresholds = asRecord(snapshot.thresholds);
   const thresholdProviders = asRecord(thresholds.adapterProviders);
@@ -1680,7 +1685,8 @@ async function handleOpsDashboardPublishCommand(
     `adapters requests/failed/retryRate/failureRate=${formatNumber(adapters.totalRequests, 0)}/${formatNumber(adapters.failedRequests, 0)}/${formatNumber(adapters.retryRate, 3)}/${formatNumber(adapters.failureRate, 3)}`,
     `thresholds success<${formatNumber(thresholds.successRateWarning, 3)} queueHigh>=${formatNumber(thresholds.queueHighPriorityPendingWarning, 0)} adapterRetry>=${formatNumber(thresholds.adapterRetryRateWarning, 3)}`,
     `thresholdProviderRetryWarn x/reddit/youtube/ebay=${formatNumber(thresholdX.retryRateWarning, 3)}/${formatNumber(thresholdReddit.retryRateWarning, 3)}/${formatNumber(thresholdYouTube.retryRateWarning, 3)}/${formatNumber(thresholdEbay.retryRateWarning, 3)}`,
-    `alerts=${formatNumber(alerts, 0)} canary(sent/notified/failed)=${formatNumber(canary.sentRuns, 0)}/${formatNumber(canary.notifiedRuns, 0)}/${formatNumber(canary.failedRuns, 0)}`,
+    `alerts=${formatNumber(alerts, 0)} canary(sent/notified/failed/acks)=${formatNumber(canary.sentRuns, 0)}/${formatNumber(canary.notifiedRuns, 0)}/${formatNumber(canary.failedRuns, 0)}/${formatNumber(canary.ackCount, 0)}`,
+    `digest(events/sent/failed)=${formatNumber(escalationDigest.totalEvents, 0)}/${formatNumber(escalationDigest.sentEvents, 0)}/${formatNumber(escalationDigest.failedEvents, 0)}`,
     `holds p1(gov/budget/dataGap)=${formatNumber(p1Holds.governanceHold, 0)}/${formatNumber(p1Holds.budgetHold, 0)}/${formatNumber(p1Holds.dataGap, 0)} p2=${formatNumber(p2Holds.governanceHold, 0)}/${formatNumber(p2Holds.budgetHold, 0)}/${formatNumber(p2Holds.dataGap, 0)}`,
   ]);
 }
