@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { clearPluginCommands, registerPluginCommand } from "../plugins/commands.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import {
@@ -20,9 +21,11 @@ import type { ChatCommandDefinition } from "./commands-registry.types.js";
 
 beforeEach(() => {
   setActivePluginRegistry(createTestRegistry([]));
+  clearPluginCommands();
 });
 
 afterEach(() => {
+  clearPluginCommands();
   setActivePluginRegistry(createTestRegistry([]));
 });
 
@@ -107,6 +110,24 @@ describe("commands registry", () => {
     expect(native.find((spec) => spec.name === "voice")).toBeTruthy();
     expect(findCommandByNativeName("voice", "discord")?.key).toBe("tts");
     expect(findCommandByNativeName("tts", "discord")).toBeUndefined();
+  });
+
+  it("includes plugin-registered commands in native specs", () => {
+    const registered = registerPluginCommand("ari-autonomous", {
+      name: "ari-plugin-demo",
+      description: "Plugin native command demo",
+      acceptsArgs: true,
+      handler: async () => ({ text: "ok" }),
+    });
+    expect(registered.ok).toBe(true);
+
+    const native = listNativeCommandSpecsForConfig(
+      { commands: { native: true } },
+      { provider: "discord" },
+    );
+    const spec = native.find((entry) => entry.name === "ari-plugin-demo");
+    expect(spec).toBeTruthy();
+    expect(spec?.acceptsArgs).toBe(true);
   });
 
   it("detects known text commands", () => {

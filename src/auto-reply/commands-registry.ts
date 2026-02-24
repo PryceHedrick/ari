@@ -3,6 +3,7 @@ import { resolveConfiguredModelRef } from "../agents/model-selection.js";
 import type { SkillCommandSpec } from "../agents/skills.js";
 import { isCommandFlagEnabled } from "../config/commands.js";
 import type { OpenClawConfig } from "../config/types.js";
+import { getPluginCommandSpecs } from "../plugins/commands.js";
 import { escapeRegExp } from "../utils.js";
 import { getChatCommands, getNativeCommandSurfaces } from "./commands-registry.data.js";
 import type {
@@ -156,21 +157,49 @@ function listNativeSpecsFromCommands(
     .map((command) => toNativeCommandSpec(command, provider));
 }
 
+function listPluginNativeSpecs(): NativeCommandSpec[] {
+  return getPluginCommandSpecs().map((command) => ({
+    name: command.name,
+    description: command.description,
+    acceptsArgs: Boolean(command.acceptsArgs),
+  }));
+}
+
+function dedupeNativeSpecs(specs: NativeCommandSpec[]): NativeCommandSpec[] {
+  const seen = new Set<string>();
+  const deduped: NativeCommandSpec[] = [];
+  for (const spec of specs) {
+    const key = spec.name.trim().toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(spec);
+  }
+  return deduped;
+}
+
 export function listNativeCommandSpecs(params?: {
   skillCommands?: SkillCommandSpec[];
   provider?: string;
 }): NativeCommandSpec[] {
-  return listNativeSpecsFromCommands(
-    listChatCommands({ skillCommands: params?.skillCommands }),
-    params?.provider,
-  );
+  return dedupeNativeSpecs([
+    ...listNativeSpecsFromCommands(
+      listChatCommands({ skillCommands: params?.skillCommands }),
+      params?.provider,
+    ),
+    ...listPluginNativeSpecs(),
+  ]);
 }
 
 export function listNativeCommandSpecsForConfig(
   cfg: OpenClawConfig,
   params?: { skillCommands?: SkillCommandSpec[]; provider?: string },
 ): NativeCommandSpec[] {
-  return listNativeSpecsFromCommands(listChatCommandsForConfig(cfg, params), params?.provider);
+  return dedupeNativeSpecs([
+    ...listNativeSpecsFromCommands(listChatCommandsForConfig(cfg, params), params?.provider),
+    ...listPluginNativeSpecs(),
+  ]);
 }
 
 export function findCommandByNativeName(
