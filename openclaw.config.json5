@@ -45,7 +45,37 @@
       "ari-market": { enabled: true },
       "ari-governance": { enabled: true },
       "ari-agents": { enabled: true },
-      "ari-autonomous": { enabled: true },
+      "ari-autonomous": {
+        enabled: true,
+        config: {
+          apiBaseUrl: "${ARI_PIPELINES_API_BASE_URL:-http://127.0.0.1:8787}",
+          apiToken: "${ARI_PIPELINES_API_TOKEN}",
+          timeoutMs: "${ARI_PIPELINES_API_TIMEOUT_MS:-20000}",
+          routing: {
+            strict: true,
+            p1ChannelIds: [
+              "${ARI_DISCORD_CHANNEL_MAIN}",
+              "${ARI_DISCORD_CHANNEL_DEEP}",
+              "${ARI_DISCORD_CHANNEL_MARKET_ALERTS}",
+              "${ARI_DISCORD_CHANNEL_POKEMON}",
+              "${ARI_DISCORD_CHANNEL_PAYTHEPRYCE_CONTENT}",
+              "${ARI_DISCORD_CHANNEL_THUMBNAIL_LAB}",
+            ],
+            p2ChannelIds: [
+              "${ARI_DISCORD_CHANNEL_MAIN}",
+              "${ARI_DISCORD_CHANNEL_DEEP}",
+              "${ARI_DISCORD_CHANNEL_LEADS}",
+              "${ARI_DISCORD_CHANNEL_BATTLE_PLANS}",
+              "${ARI_DISCORD_CHANNEL_DEMO_FACTORY}",
+              "${ARI_DISCORD_CHANNEL_OUTREACH_QUEUE}",
+            ],
+            statusChannelIds: [
+              "${ARI_DISCORD_CHANNEL_MAIN}",
+              "${ARI_DISCORD_CHANNEL_SYSTEM_STATUS}",
+            ],
+          },
+        },
+      },
       "ari-notion": { enabled: true },
       "ari-voice": { enabled: true },
     },

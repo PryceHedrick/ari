@@ -1,5 +1,6 @@
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { registerAriPipelinesCommandBridge } from "../../src/plugins/ari-pipelines-command-bridge.js";
 
 /**
  * ARI Autonomous Plugin — Self-healing watchdog + intelligence scanner.
@@ -20,11 +21,12 @@ import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
  * Source: src/autonomous/self-healing.ts, src/autonomous/intelligence-scanner.ts
  */
 const plugin = {
-  id: 'ari-autonomous',
-  name: 'ARI Autonomous',
-  description: 'Self-healing watchdog + intelligence scanner (confidence threshold 0.85)',
+  id: "ari-autonomous",
+  name: "ARI Autonomous",
+  description: "Self-healing watchdog + intelligence scanner (confidence threshold 0.85)",
   configSchema: emptyPluginConfigSchema(),
-  register(_api: OpenClawPluginApi): void {
+  register(api: OpenClawPluginApi): void {
+    registerAriPipelinesCommandBridge(api);
     // Phase 3: api.registerService({ id: 'watchdog', start: initSelfHealing })
     // Phase 3: api.registerService({ id: 'intelligence', start: initIntelligenceScanner })
   },

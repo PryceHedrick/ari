@@ -5,6 +5,37 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": true,
-    "properties": {}
+    "properties": {
+      "apiBaseUrl": {
+        "type": "string"
+      },
+      "apiToken": {
+        "type": "string"
+      },
+      "timeoutMs": {
+        "anyOf": [{ "type": "number" }, { "type": "string" }]
+      },
+      "routing": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "strict": {
+            "type": "boolean"
+          },
+          "p1ChannelIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "p2ChannelIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "statusChannelIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
   }
 }
