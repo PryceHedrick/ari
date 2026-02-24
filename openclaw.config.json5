@@ -70,6 +70,16 @@
             failureAlertThreshold: "${ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD:-3}",
             failureAlertCooldownMinutes: "${ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES:-120}",
           },
+          opsCanary: {
+            enabled: "${ARI_OPS_CANARY_ENABLED:-false}",
+            intervalMinutes: "${ARI_OPS_CANARY_INTERVAL_MINUTES:-1440}",
+            startupDelaySeconds: "${ARI_OPS_CANARY_STARTUP_DELAY_SECONDS:-90}",
+            severity: "${ARI_OPS_CANARY_SEVERITY:-warning}",
+            source: "${ARI_OPS_CANARY_SOURCE:-ops.canary}",
+            message: "${ARI_OPS_CANARY_MESSAGE:-synthetic canary escalation check}",
+            businessUnit: "${ARI_OPS_CANARY_BUSINESS_UNIT:-operations}",
+            channelId: "${ARI_OPS_CANARY_CHANNEL_ID:-${ARI_DISCORD_CHANNEL_SYSTEM_STATUS}}",
+          },
           routing: {
             strict: true,
             p1ChannelIds: [

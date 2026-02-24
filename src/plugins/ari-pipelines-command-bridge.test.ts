@@ -5,6 +5,7 @@ import {
   extractCommandChannelId,
   normalizeChannelId,
   parseOpsAlertArgs,
+  parseOpsCanaryArgs,
   parseDashboardPublishArgs,
   parseRetryStatusCodes,
   resolveRetryPolicyForRequest,
@@ -34,6 +35,16 @@ function buildRuntime(overrides?: Partial<BridgeRuntimeConfig>): BridgeRuntimeCo
       channelId: undefined,
       failureAlertThreshold: 3,
       failureAlertCooldownMinutes: 120,
+    },
+    opsCanary: {
+      enabled: false,
+      intervalMinutes: 24 * 60,
+      startupDelaySeconds: 90,
+      severity: "warning",
+      source: "ops.canary",
+      message: "synthetic canary escalation check",
+      businessUnit: "operations",
+      channelId: undefined,
     },
     strictRouting: true,
     p1Channels: new Set<string>(),
@@ -177,6 +188,18 @@ describe("parseOpsAlertArgs", () => {
       businessUnit: "pokemon",
       channel: "123456",
     });
+  });
+});
+
+describe("parseOpsCanaryArgs", () => {
+  it("defaults to status", () => {
+    expect(parseOpsCanaryArgs()).toEqual({ action: "status" });
+    expect(parseOpsCanaryArgs("status")).toEqual({ action: "status" });
+  });
+
+  it("parses run action with severity override", () => {
+    expect(parseOpsCanaryArgs("run info")).toEqual({ action: "run", severity: "info" });
+    expect(parseOpsCanaryArgs("run critical")).toEqual({ action: "run", severity: "critical" });
   });
 });
 

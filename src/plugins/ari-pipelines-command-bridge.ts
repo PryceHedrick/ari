@@ -24,6 +24,17 @@ type BridgeOpsAutopublishConfig = {
   failureAlertCooldownMinutes: number;
 };
 
+type BridgeOpsCanaryConfig = {
+  enabled: boolean;
+  intervalMinutes: number;
+  startupDelaySeconds: number;
+  severity: "info" | "warning" | "critical";
+  source: string;
+  message: string;
+  businessUnit: string;
+  channelId?: string;
+};
+
 export type BridgeRuntimeConfig = {
   apiBaseUrl: string;
   apiToken?: string;
@@ -32,6 +43,7 @@ export type BridgeRuntimeConfig = {
   mutationRetryAttempts: number;
   approvalRetryAttempts: number;
   opsAutopublish: BridgeOpsAutopublishConfig;
+  opsCanary: BridgeOpsCanaryConfig;
   strictRouting: boolean;
   p1Channels: Set<string>;
   p2Channels: Set<string>;
@@ -68,6 +80,28 @@ type OpsAutopublishStatus = {
   nextRunAt?: string;
 };
 
+type OpsCanaryStatus = {
+  enabled: boolean;
+  active: boolean;
+  inFlight: boolean;
+  intervalMinutes: number;
+  startupDelaySeconds: number;
+  severity: "info" | "warning" | "critical";
+  source: string;
+  message: string;
+  businessUnit: string;
+  channelId?: string;
+  totalRuns: number;
+  totalSent: number;
+  totalFailures: number;
+  lastTrigger?: string;
+  lastRunAt?: string;
+  lastCompletedAt?: string;
+  lastSentAt?: string;
+  lastError?: string;
+  nextRunAt?: string;
+};
+
 type HttpMethod = "GET" | "POST";
 
 type RequestResult = {
@@ -96,6 +130,8 @@ const DEFAULT_OPS_AUTOPUBLISH_WINDOW_HOURS = 24;
 const DEFAULT_OPS_AUTOPUBLISH_STARTUP_DELAY_SECONDS = 45;
 const DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD = 3;
 const DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES = 120;
+const DEFAULT_OPS_CANARY_INTERVAL_MINUTES = 24 * 60;
+const DEFAULT_OPS_CANARY_STARTUP_DELAY_SECONDS = 90;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -166,6 +202,17 @@ function asBoolean(value: unknown): boolean | undefined {
 
 function readEnv(name: string): string | undefined {
   return asTrimmedString(process.env[name]);
+}
+
+function readSeverity(
+  value: unknown,
+  fallback: "info" | "warning" | "critical",
+): "info" | "warning" | "critical" {
+  const normalized = asTrimmedString(value)?.toLowerCase();
+  if (normalized === "info" || normalized === "warning" || normalized === "critical") {
+    return normalized;
+  }
+  return fallback;
 }
 
 function parseStatusCode(candidate: unknown): number | undefined {
@@ -313,6 +360,7 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   const routing = asRecord(pluginConfig.routing);
   const retryConfig = asRecord(pluginConfig.retry);
   const opsAutopublishConfig = asRecord(pluginConfig.opsAutopublish);
+  const opsCanaryConfig = asRecord(pluginConfig.opsCanary);
 
   const apiBaseUrl =
     asTrimmedString(pluginConfig.apiBaseUrl) ??
@@ -388,6 +436,33 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
     asPositiveInt(opsAutopublishConfig.failureAlertCooldownMinutes) ??
     asPositiveInt(readEnv("ARI_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES")) ??
     DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES;
+  const opsCanaryEnabled =
+    asBoolean(opsCanaryConfig.enabled) ?? asBoolean(readEnv("ARI_OPS_CANARY_ENABLED")) ?? false;
+  const opsCanaryIntervalMinutes =
+    asPositiveInt(opsCanaryConfig.intervalMinutes) ??
+    asPositiveInt(readEnv("ARI_OPS_CANARY_INTERVAL_MINUTES")) ??
+    DEFAULT_OPS_CANARY_INTERVAL_MINUTES;
+  const opsCanaryStartupDelaySeconds =
+    asNonNegativeInt(opsCanaryConfig.startupDelaySeconds) ??
+    asNonNegativeInt(readEnv("ARI_OPS_CANARY_STARTUP_DELAY_SECONDS")) ??
+    DEFAULT_OPS_CANARY_STARTUP_DELAY_SECONDS;
+  const opsCanarySeverity = readSeverity(
+    asTrimmedString(opsCanaryConfig.severity) ?? readEnv("ARI_OPS_CANARY_SEVERITY"),
+    "warning",
+  );
+  const opsCanarySource =
+    asTrimmedString(opsCanaryConfig.source) ?? readEnv("ARI_OPS_CANARY_SOURCE") ?? "ops.canary";
+  const opsCanaryMessage =
+    asTrimmedString(opsCanaryConfig.message) ??
+    readEnv("ARI_OPS_CANARY_MESSAGE") ??
+    "synthetic canary escalation check";
+  const opsCanaryBusinessUnit =
+    asTrimmedString(opsCanaryConfig.businessUnit) ??
+    readEnv("ARI_OPS_CANARY_BUSINESS_UNIT") ??
+    "operations";
+  const opsCanaryChannelId =
+    normalizeChannelId(opsCanaryConfig.channelId) ??
+    normalizeChannelId(readEnv("ARI_OPS_CANARY_CHANNEL_ID"));
   const strictRouting = asBoolean(routing.strict) ?? true;
 
   const resolved: BridgeRuntimeConfig = {
@@ -413,6 +488,16 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
       failureAlertThreshold: opsAutopublishFailureAlertThreshold,
       failureAlertCooldownMinutes: opsAutopublishFailureAlertCooldownMinutes,
     },
+    opsCanary: {
+      enabled: opsCanaryEnabled,
+      intervalMinutes: opsCanaryIntervalMinutes,
+      startupDelaySeconds: opsCanaryStartupDelaySeconds,
+      severity: opsCanarySeverity,
+      source: opsCanarySource,
+      message: opsCanaryMessage,
+      businessUnit: opsCanaryBusinessUnit,
+      channelId: opsCanaryChannelId,
+    },
     strictRouting,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),
@@ -428,6 +513,10 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   if (!resolved.opsAutopublish.channelId && resolved.statusChannels.size > 0) {
     const fallbackStatusChannel = Array.from(resolved.statusChannels)[0];
     resolved.opsAutopublish.channelId = fallbackStatusChannel;
+  }
+  if (!resolved.opsCanary.channelId && resolved.statusChannels.size > 0) {
+    const fallbackStatusChannel = Array.from(resolved.statusChannels)[0];
+    resolved.opsCanary.channelId = fallbackStatusChannel;
   }
 
   return resolved;
@@ -826,11 +915,40 @@ export function parseOpsAlertArgs(args?: string): {
   };
 }
 
+export function parseOpsCanaryArgs(args?: string): {
+  action: "status" | "run";
+  severity?: "info" | "warning" | "critical";
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  if (tokens.length === 0 || tokens[0] === "status") {
+    return { action: "status" };
+  }
+  if (tokens[0] !== "run") {
+    return { action: "status" };
+  }
+  const severity = readSeverity(tokens[1], "warning");
+  return { action: "run", severity };
+}
+
 type OpsAutopublishController = {
   start: () => void;
   stop: () => void;
   runNow: (params?: { force?: boolean; windowHours?: number; trigger?: string }) => Promise<void>;
   getStatus: () => OpsAutopublishStatus;
+};
+
+type OpsCanaryController = {
+  start: () => void;
+  stop: () => void;
+  runNow: (params?: {
+    trigger?: string;
+    severity?: "info" | "warning" | "critical";
+  }) => Promise<void>;
+  getStatus: () => OpsCanaryStatus;
 };
 
 function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopublishController {
@@ -1047,6 +1165,145 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
       status.inFlight = false;
       clearTimer();
       runtime.logger.info("[ari-autonomous] ops dashboard autopublish stopped");
+    },
+    runNow: async (params) => runNow(params),
+    getStatus: () => ({ ...status }),
+  };
+}
+
+function createOpsCanaryController(runtime: BridgeRuntimeConfig): OpsCanaryController {
+  const status: OpsCanaryStatus = {
+    enabled: runtime.opsCanary.enabled,
+    active: false,
+    inFlight: false,
+    intervalMinutes: runtime.opsCanary.intervalMinutes,
+    startupDelaySeconds: runtime.opsCanary.startupDelaySeconds,
+    severity: runtime.opsCanary.severity,
+    source: runtime.opsCanary.source,
+    message: runtime.opsCanary.message,
+    businessUnit: runtime.opsCanary.businessUnit,
+    channelId: runtime.opsCanary.channelId,
+    totalRuns: 0,
+    totalSent: 0,
+    totalFailures: 0,
+  };
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = true;
+
+  const clearTimer = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    status.nextRunAt = undefined;
+  };
+
+  const scheduleNext = (delayMs: number) => {
+    if (stopped || !status.enabled) {
+      return;
+    }
+    const safeDelayMs = Math.max(1_000, Math.floor(delayMs));
+    clearTimer();
+    status.nextRunAt = new Date(Date.now() + safeDelayMs).toISOString();
+    timer = setTimeout(() => {
+      void runNow({ trigger: "interval" });
+    }, safeDelayMs);
+  };
+
+  const runNow = async (params?: {
+    trigger?: string;
+    severity?: "info" | "warning" | "critical";
+  }): Promise<void> => {
+    const manualTrigger = (params?.trigger ?? "").startsWith("manual");
+    if (status.inFlight) {
+      return;
+    }
+    if ((!status.enabled || stopped) && !manualTrigger) {
+      return;
+    }
+
+    clearTimer();
+    status.inFlight = true;
+    status.lastTrigger = params?.trigger ?? "manual";
+    status.lastRunAt = new Date().toISOString();
+    status.totalRuns += 1;
+    const severity = params?.severity ?? status.severity;
+
+    try {
+      const result = await callAriPipelinesApi({
+        runtime,
+        method: "POST",
+        path: "/api/ops/alerts/escalate",
+        body: {
+          severity,
+          source: status.source,
+          message: status.message,
+          metadata: {
+            triggeredBy: "canary-scheduler",
+            businessUnit: status.businessUnit,
+            channel: status.channelId ?? null,
+          },
+        },
+      });
+      status.lastCompletedAt = new Date().toISOString();
+      if (!result.ok) {
+        status.totalFailures += 1;
+        status.lastError = result.error ?? "request_failed";
+        runtime.logger.warn(`[ari-autonomous] ops canary failed: ${status.lastError}`);
+      } else {
+        const payload = asRecord(result.data);
+        if (payload.sent === true) {
+          status.totalSent += 1;
+          status.lastSentAt = status.lastCompletedAt;
+          status.lastError = undefined;
+          runtime.logger.info("[ari-autonomous] ops canary sent");
+        } else {
+          status.lastError = asTrimmedString(payload.error) ?? "canary_not_sent";
+          runtime.logger.warn(`[ari-autonomous] ops canary not sent: ${status.lastError}`);
+        }
+      }
+    } catch (error) {
+      status.totalFailures += 1;
+      status.lastCompletedAt = new Date().toISOString();
+      status.lastError =
+        error instanceof Error && error.message ? error.message : "unexpected_error";
+      runtime.logger.warn(`[ari-autonomous] ops canary crashed: ${status.lastError}`);
+    } finally {
+      status.inFlight = false;
+      if (!stopped && status.enabled) {
+        scheduleNext(status.intervalMinutes * 60_000);
+      }
+    }
+  };
+
+  return {
+    start: () => {
+      if (!status.enabled) {
+        runtime.logger.info("[ari-autonomous] ops canary disabled");
+        return;
+      }
+      if (!stopped) {
+        return;
+      }
+      stopped = false;
+      status.active = true;
+      const delayMs = Math.max(0, status.startupDelaySeconds * 1_000);
+      if (delayMs === 0) {
+        void runNow({ trigger: "startup" });
+      } else {
+        scheduleNext(delayMs);
+      }
+      runtime.logger.info(
+        `[ari-autonomous] ops canary started interval=${status.intervalMinutes}m severity=${status.severity}`,
+      );
+    },
+    stop: () => {
+      stopped = true;
+      status.active = false;
+      status.inFlight = false;
+      clearTimer();
+      runtime.logger.info("[ari-autonomous] ops canary stopped");
     },
     runNow: async (params) => runNow(params),
     getStatus: () => ({ ...status }),
@@ -1346,6 +1603,30 @@ async function handleOpsAlertCommand(
     `policyAction=${asTrimmedString(payload.policyAction) ?? "n/a"} operatorSlaMinutes=${formatNumber(payload.operatorSlaMinutes, 0)} matchedOverrides=${matchedOverrides}`,
     `error=${asTrimmedString(payload.error) ?? "none"}`,
     "usage: /ari-ops-alert <severity?> <message> [source=<id>] [bu=<business-unit>] [channel=<channel-id>]",
+  ]);
+}
+
+async function handleOpsCanaryCommand(
+  controller: OpsCanaryController,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseOpsCanaryArgs(args);
+  if (parsed.action === "run") {
+    await controller.runNow({
+      trigger: "manual-command",
+      severity: parsed.severity,
+    });
+  }
+
+  const status = controller.getStatus();
+  return asReply([
+    `ARI ops canary${parsed.action === "run" ? " run complete" : " status"}`,
+    `enabled=${String(status.enabled)} active=${String(status.active)} inFlight=${String(status.inFlight)} severity=${status.severity}`,
+    `source=${status.source} businessUnit=${status.businessUnit} channel=${status.channelId ?? "n/a"}`,
+    `interval=${formatMinutes(status.intervalMinutes)} startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s`,
+    `runs=${formatNumber(status.totalRuns, 0)} sent=${formatNumber(status.totalSent, 0)} failures=${formatNumber(status.totalFailures, 0)}`,
+    `lastRunAt=${status.lastRunAt ?? "n/a"} lastCompletedAt=${status.lastCompletedAt ?? "n/a"} lastSentAt=${status.lastSentAt ?? "n/a"} nextRunAt=${status.nextRunAt ?? "n/a"} lastError=${status.lastError ?? "none"}`,
+    "usage: /ari-ops-canary [status|run [severity]]",
   ]);
 }
 
@@ -1738,6 +2019,7 @@ function withAccessControl(params: {
 export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void {
   const runtime = buildRuntimeConfig(api);
   const opsAutopublish = createOpsAutopublishController(runtime);
+  const opsCanary = createOpsCanaryController(runtime);
 
   api.logger.info(
     `[ari-autonomous] command bridge active: baseUrl=${runtime.apiBaseUrl} strictRouting=${runtime.strictRouting}`,
@@ -1746,9 +2028,11 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
     id: "ari-autonomous-ops-dashboard-autopublish",
     start: () => {
       opsAutopublish.start();
+      opsCanary.start();
     },
     stop: () => {
       opsAutopublish.stop();
+      opsCanary.stop();
     },
   });
 
@@ -1815,6 +2099,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsAutopublishCommand(opsAutopublish, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-canary",
+    description: "Show or run ops canary scheduler (optional: run [severity])",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsCanaryCommand(opsCanary, ctx.args),
     }),
   });
 
