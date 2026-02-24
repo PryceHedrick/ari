@@ -1694,12 +1694,20 @@ async function handleOpsAlertCommand(
         .filter(Boolean)
         .join(",")
     : "none";
+  const dedupe = asRecord(payload.dedupe);
+  const digest = asRecord(payload.digest);
+  const holdSummary = asRecord(payload.holdSummary);
+  const holdP1 = readHoldReasons(holdSummary.p1);
+  const holdP2 = readHoldReasons(holdSummary.p2);
   return asReply([
     "ARI ops alert",
     `severity=${asTrimmedString(payload.severity) ?? parsed.severity} source=${asTrimmedString(payload.source) ?? parsed.source}`,
     `message=${asTrimmedString(payload.message) ?? parsed.message}`,
     `notify=${String(payload.notify === true)} sent=${String(payload.sent === true)} webhookConfigured=${String(payload.webhookConfigured === true)} webhookSource=${asTrimmedString(payload.webhookSource) ?? "n/a"}`,
     `policyAction=${asTrimmedString(payload.policyAction) ?? "n/a"} operatorSlaMinutes=${formatNumber(payload.operatorSlaMinutes, 0)} matchedOverrides=${matchedOverrides}`,
+    `holds p1(gov/budget/dataGap)=${formatHoldReasons(holdP1)} p2=${formatHoldReasons(holdP2)} source=${asTrimmedString(holdSummary.source) ?? "n/a"}`,
+    `dedupe suppressed=${String(dedupe.suppressed === true)} recent=${formatNumber(dedupe.recentMatches, 0)} limit=${formatNumber(dedupe.maxPerWindow, 0)} window=${formatNumber(dedupe.windowMinutes, 0)}m`,
+    `digest eligible=${String(digest.eligible === true)} sent=${String(digest.sent === true)} suppressedEvents=${formatNumber(digest.suppressedEvents, 0)} reason=${asTrimmedString(digest.reason) ?? "n/a"}`,
     `error=${asTrimmedString(payload.error) ?? "none"}`,
     "usage: /ari-ops-alert <severity?> <message> [source=<id>] [bu=<business-unit>] [channel=<channel-id>]",
   ]);
