@@ -553,6 +553,19 @@ function formatQueuePriority(value: unknown): string {
   return "n/a";
 }
 
+function formatReasonCodes(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return "none";
+  }
+  const tokens = value
+    .map((entry) => asTrimmedString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  if (tokens.length === 0) {
+    return "none";
+  }
+  return tokens.slice(0, 4).join(",");
+}
+
 function parseSeedsFromArgs(args?: string): string[] {
   if (!args) {
     return [];
@@ -899,8 +912,9 @@ async function handleP1QueueCommand(
     const ageMinutes = asPositiveInt(job.ageMinutes) ?? parseAgeMinutesFromIso(createdAt);
     const stale = job.stale === true ? "yes" : "no";
     const priority = formatQueuePriority(job.priority);
+    const reasons = formatReasonCodes(job.reasonCodes);
     lines.push(
-      `${idx + 1}. ${id} | status=${status} | ageMin=${ageMinutes} | stale=${stale} | priority=${priority} | createdAt=${createdAt}`,
+      `${idx + 1}. ${id} | status=${status} | ageMin=${ageMinutes} | stale=${stale} | priority=${priority} | reasons=${reasons} | createdAt=${createdAt}`,
     );
   }
   return asReply(lines);
@@ -1004,8 +1018,9 @@ async function handleP2QueueCommand(
     const ageMinutes = asPositiveInt(item.ageMinutes) ?? parseAgeMinutesFromIso(createdAt);
     const stale = item.stale === true ? "yes" : "no";
     const priority = formatQueuePriority(item.priority);
+    const reasons = formatReasonCodes(item.reasonCodes);
     lines.push(
-      `${idx + 1}. ${id} | leadId=${leadId} | status=${status} | ageMin=${ageMinutes} | stale=${stale} | priority=${priority}`,
+      `${idx + 1}. ${id} | leadId=${leadId} | status=${status} | ageMin=${ageMinutes} | stale=${stale} | priority=${priority} | reasons=${reasons}`,
     );
   }
   return asReply(lines);
