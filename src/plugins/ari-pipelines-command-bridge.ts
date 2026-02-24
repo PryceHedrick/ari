@@ -355,6 +355,42 @@ function parseLimitArg(args?: string): number {
   return Math.min(25, Math.max(1, Math.floor(parsed)));
 }
 
+function parseQueueArgs(params: { args?: string; validStatuses: Set<string> }): {
+  limit: number;
+  status?: string;
+} {
+  const tokens = (params.args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return { limit: 10 };
+  }
+
+  let status: string | undefined;
+  let limit = 10;
+
+  const first = tokens[0];
+  if (params.validStatuses.has(first)) {
+    status = first;
+    if (tokens[1]) {
+      const parsed = Number(tokens[1]);
+      if (Number.isFinite(parsed)) {
+        limit = Math.min(25, Math.max(1, Math.floor(parsed)));
+      }
+    }
+    return { limit, status };
+  }
+
+  const parsed = Number(first);
+  if (Number.isFinite(parsed)) {
+    limit = Math.min(25, Math.max(1, Math.floor(parsed)));
+  }
+
+  return { limit };
+}
+
 function parseLeadAndEvidence(args?: string): { leadId?: string; evidence?: string[] } {
   const trimmed = (args ?? "").trim();
   if (!trimmed) {
@@ -532,6 +568,45 @@ async function handleP1JobStatusCommand(
   ]);
 }
 
+async function handleP1QueueCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseQueueArgs({
+    args,
+    validStatuses: new Set(["pending_approval", "approved", "rejected"]),
+  });
+  const query = new URLSearchParams({ limit: String(parsed.limit) });
+  if (parsed.status) {
+    query.set("status", parsed.status);
+  }
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "GET",
+    path: `/api/p1/video/jobs?${query.toString()}`,
+  });
+  if (!result.ok) {
+    return asReply([`P1 queue lookup failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const jobs = Array.isArray(result.data) ? result.data : [];
+  if (jobs.length === 0) {
+    return asReply(["P1 queue is empty for current filter."]);
+  }
+
+  const lines = [
+    `P1 video queue (count=${jobs.length}${parsed.status ? `, status=${parsed.status}` : ""})`,
+  ];
+  for (let idx = 0; idx < Math.min(jobs.length, 20); idx += 1) {
+    const job = asRecord(jobs[idx]);
+    const id = asTrimmedString(job.id) ?? "n/a";
+    const status = asTrimmedString(job.status) ?? "n/a";
+    const createdAt = asTrimmedString(job.createdAt) ?? "n/a";
+    lines.push(`${idx + 1}. ${id} | status=${status} | createdAt=${createdAt}`);
+  }
+  return asReply(lines);
+}
+
 async function handleP2ScanCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -589,6 +664,45 @@ async function handleP2TopCommand(
     lines.push(`${idx + 1}. ${name} | score=${score} | leadId=${leadId}`);
   }
 
+  return asReply(lines);
+}
+
+async function handleP2QueueCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseQueueArgs({
+    args,
+    validStatuses: new Set(["draft", "queued", "approved", "sent", "rejected"]),
+  });
+  const query = new URLSearchParams({ limit: String(parsed.limit) });
+  if (parsed.status) {
+    query.set("status", parsed.status);
+  }
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "GET",
+    path: `/api/p2/outreach/queue?${query.toString()}`,
+  });
+  if (!result.ok) {
+    return asReply([`P2 queue lookup failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const items = Array.isArray(result.data) ? result.data : [];
+  if (items.length === 0) {
+    return asReply(["P2 outreach queue is empty for current filter."]);
+  }
+
+  const lines = [
+    `P2 outreach queue (count=${items.length}${parsed.status ? `, status=${parsed.status}` : ""})`,
+  ];
+  for (let idx = 0; idx < Math.min(items.length, 20); idx += 1) {
+    const item = asRecord(items[idx]);
+    const id = asTrimmedString(item.id) ?? "n/a";
+    const status = asTrimmedString(item.status) ?? "n/a";
+    const leadId = asTrimmedString(item.leadId) ?? "n/a";
+    lines.push(`${idx + 1}. ${id} | leadId=${leadId} | status=${status}`);
+  }
   return asReply(lines);
 }
 
@@ -741,6 +855,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
   });
 
   api.registerCommand({
+    name: "ari-p1-queue",
+    description: "List Pipeline 1 video jobs (optional: <status> <limit>)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "p1",
+      handler: async (ctx) => handleP1QueueCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
     name: "ari-p1-job",
     description: "Fetch Pipeline 1 video job status by id",
     acceptsArgs: true,
@@ -781,6 +906,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "p2",
       handler: async (ctx) => handleP2TopCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-p2-queue",
+    description: "List Pipeline 2 outreach queue (optional: <status> <limit>)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "p2",
+      handler: async (ctx) => handleP2QueueCommand(runtime, ctx.args),
     }),
   });
 
