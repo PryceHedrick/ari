@@ -2439,7 +2439,7 @@ async function handleOpsWeeklyDigestOverrideCommand(
   const parsed = parseOpsWeeklyOverrideArgs(args);
   if (!parsed.reason) {
     return asReply([
-      "Usage: /ari-ops-weekly-override [window-hours|window=<hours>] <override-reason>",
+      "Usage: /ari-ops-weekly-override [window-hours|window=<hours>] <prefix: override-reason>",
     ]);
   }
   const result = await callAriPipelinesApi({
@@ -2462,11 +2462,19 @@ async function handleOpsWeeklyDigestOverrideCommand(
     "ARI ops weekly digest override",
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(parsed.windowHours, 0)} | requestedBy=${asTrimmedString(payload.requestedBy) ?? "manual-command"}`,
     `reason: ${asTrimmedString(payload.reason) ?? parsed.reason}`,
+    `controls cooldown=${formatNumber(payload.cooldownWindowMinutes, 0)}m maxPerWindow=${formatNumber(payload.maxPerWindow, 0)} recentOverrides=${formatNumber(payload.recentOverrides, 0)} prefixes=${
+      Array.isArray(payload.allowedReasonPrefixes)
+        ? payload.allowedReasonPrefixes
+            .map((entry) => asTrimmedString(entry))
+            .filter(Boolean)
+            .join(",") || "n/a"
+        : "n/a"
+    }`,
     `approved=${String(payload.approved === true)} overrideExecuted=${String(payload.overrideExecuted === true)} ruleKey=${asTrimmedString(payload.ruleKey) ?? "n/a"} requiresManualApproval=${String(payload.requiresManualApproval === true)}`,
     `decision: ${formatDecisionOutcome(payload.decision)}`,
     `publish configured=${String(publish.webhookConfigured === true)} source=${asTrimmedString(publish.webhookSource) ?? "n/a"} published=${String(publish.published === true)} status=${formatNumber(publish.publishStatus, 0)} error=${asTrimmedString(publish.publishError) ?? "none"}`,
     `error=${asTrimmedString(payload.error) ?? "none"}`,
-    "usage: /ari-ops-weekly-override [window-hours|window=<hours>] <override-reason>",
+    "usage: /ari-ops-weekly-override [window-hours|window=<hours>] <prefix: reason>",
   ]);
 }
 
@@ -3063,7 +3071,7 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
   api.registerCommand({
     name: "ari-ops-weekly-override",
     description:
-      "Force weekly digest publish with governance gate (usage: [window-hours|window=<hours>] <reason>)",
+      "Force weekly digest publish with governance gate (usage: [window-hours|window=<hours>] <prefix: reason>)",
     acceptsArgs: true,
     handler: withAccessControl({
       runtime,
