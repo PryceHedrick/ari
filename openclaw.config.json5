@@ -80,6 +80,17 @@
             businessUnit: "${ARI_OPS_CANARY_BUSINESS_UNIT:-operations}",
             channelId: "${ARI_OPS_CANARY_CHANNEL_ID:-${ARI_DISCORD_CHANNEL_SYSTEM_STATUS}}",
           },
+          opsWeeklyDigest: {
+            enabled: "${ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_ENABLED:-false}",
+            intervalMinutes: "${ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_INTERVAL_MINUTES:-10080}",
+            windowHours: "${ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_WINDOW_HOURS:-168}",
+            startupDelaySeconds: "${ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_STARTUP_DELAY_SECONDS:-120}",
+            failureAlertThreshold: "${ARI_OPS_WEEKLY_DIGEST_FAILURE_ALERT_THRESHOLD:-2}",
+            failureAlertCooldownMinutes: "${ARI_OPS_WEEKLY_DIGEST_FAILURE_ALERT_COOLDOWN_MINUTES:-720}",
+            forceRerunEnabled: "${ARI_OPS_WEEKLY_DIGEST_FORCE_RERUN_ENABLED:-true}",
+            forceRerunDelayMinutes: "${ARI_OPS_WEEKLY_DIGEST_FORCE_RERUN_DELAY_MINUTES:-30}",
+            forceRerunMaxAttempts: "${ARI_OPS_WEEKLY_DIGEST_FORCE_RERUN_MAX_ATTEMPTS:-1}",
+          },
           routing: {
             strict: true,
             p1ChannelIds: [

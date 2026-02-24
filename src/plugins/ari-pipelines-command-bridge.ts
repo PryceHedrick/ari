@@ -40,6 +40,11 @@ type BridgeOpsWeeklyDigestConfig = {
   intervalMinutes: number;
   windowHours: number;
   startupDelaySeconds: number;
+  failureAlertThreshold: number;
+  failureAlertCooldownMinutes: number;
+  forceRerunEnabled: boolean;
+  forceRerunDelayMinutes: number;
+  forceRerunMaxAttempts: number;
 };
 
 export type BridgeRuntimeConfig = {
@@ -128,15 +133,26 @@ type OpsWeeklyDigestStatus = {
   intervalMinutes: number;
   windowHours: number;
   startupDelaySeconds: number;
+  failureAlertThreshold: number;
+  failureAlertCooldownMinutes: number;
+  forceRerunEnabled: boolean;
+  forceRerunDelayMinutes: number;
+  forceRerunMaxAttempts: number;
+  forceRerunPending: boolean;
+  forceRerunAttempts: number;
   totalRuns: number;
   totalPublished: number;
   totalFailures: number;
+  consecutiveFailures: number;
+  escalationCount: number;
   lastTrigger?: string;
   lastRunAt?: string;
   lastCompletedAt?: string;
   lastPublishedAt?: string;
   lastPublishStatus?: number;
   lastError?: string;
+  lastEscalatedAt?: string;
+  lastForcedRerunAt?: string;
   nextRunAt?: string;
 };
 
@@ -173,6 +189,10 @@ const DEFAULT_OPS_CANARY_STARTUP_DELAY_SECONDS = 90;
 const DEFAULT_OPS_WEEKLY_DIGEST_INTERVAL_MINUTES = 7 * 24 * 60;
 const DEFAULT_OPS_WEEKLY_DIGEST_WINDOW_HOURS = 168;
 const DEFAULT_OPS_WEEKLY_DIGEST_STARTUP_DELAY_SECONDS = 120;
+const DEFAULT_OPS_WEEKLY_DIGEST_FAILURE_ALERT_THRESHOLD = 2;
+const DEFAULT_OPS_WEEKLY_DIGEST_FAILURE_ALERT_COOLDOWN_MINUTES = 12 * 60;
+const DEFAULT_OPS_WEEKLY_DIGEST_FORCE_RERUN_DELAY_MINUTES = 30;
+const DEFAULT_OPS_WEEKLY_DIGEST_FORCE_RERUN_MAX_ATTEMPTS = 1;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -522,6 +542,26 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
     asNonNegativeInt(opsWeeklyDigestConfig.startupDelaySeconds) ??
     asNonNegativeInt(readEnv("ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_STARTUP_DELAY_SECONDS")) ??
     DEFAULT_OPS_WEEKLY_DIGEST_STARTUP_DELAY_SECONDS;
+  const opsWeeklyDigestFailureAlertThreshold =
+    asPositiveInt(opsWeeklyDigestConfig.failureAlertThreshold) ??
+    asPositiveInt(readEnv("ARI_OPS_WEEKLY_DIGEST_FAILURE_ALERT_THRESHOLD")) ??
+    DEFAULT_OPS_WEEKLY_DIGEST_FAILURE_ALERT_THRESHOLD;
+  const opsWeeklyDigestFailureAlertCooldownMinutes =
+    asPositiveInt(opsWeeklyDigestConfig.failureAlertCooldownMinutes) ??
+    asPositiveInt(readEnv("ARI_OPS_WEEKLY_DIGEST_FAILURE_ALERT_COOLDOWN_MINUTES")) ??
+    DEFAULT_OPS_WEEKLY_DIGEST_FAILURE_ALERT_COOLDOWN_MINUTES;
+  const opsWeeklyDigestForceRerunEnabled =
+    asBoolean(opsWeeklyDigestConfig.forceRerunEnabled) ??
+    asBoolean(readEnv("ARI_OPS_WEEKLY_DIGEST_FORCE_RERUN_ENABLED")) ??
+    true;
+  const opsWeeklyDigestForceRerunDelayMinutes =
+    asPositiveInt(opsWeeklyDigestConfig.forceRerunDelayMinutes) ??
+    asPositiveInt(readEnv("ARI_OPS_WEEKLY_DIGEST_FORCE_RERUN_DELAY_MINUTES")) ??
+    DEFAULT_OPS_WEEKLY_DIGEST_FORCE_RERUN_DELAY_MINUTES;
+  const opsWeeklyDigestForceRerunMaxAttempts =
+    asPositiveInt(opsWeeklyDigestConfig.forceRerunMaxAttempts) ??
+    asPositiveInt(readEnv("ARI_OPS_WEEKLY_DIGEST_FORCE_RERUN_MAX_ATTEMPTS")) ??
+    DEFAULT_OPS_WEEKLY_DIGEST_FORCE_RERUN_MAX_ATTEMPTS;
   const strictRouting = asBoolean(routing.strict) ?? true;
 
   const resolved: BridgeRuntimeConfig = {
@@ -562,6 +602,11 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
       intervalMinutes: opsWeeklyDigestIntervalMinutes,
       windowHours: opsWeeklyDigestWindowHours,
       startupDelaySeconds: opsWeeklyDigestStartupDelaySeconds,
+      failureAlertThreshold: opsWeeklyDigestFailureAlertThreshold,
+      failureAlertCooldownMinutes: opsWeeklyDigestFailureAlertCooldownMinutes,
+      forceRerunEnabled: opsWeeklyDigestForceRerunEnabled,
+      forceRerunDelayMinutes: opsWeeklyDigestForceRerunDelayMinutes,
+      forceRerunMaxAttempts: opsWeeklyDigestForceRerunMaxAttempts,
     },
     strictRouting,
     p1Channels: new Set<string>(),
@@ -1512,9 +1557,18 @@ function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeekl
     intervalMinutes: runtime.opsWeeklyDigest.intervalMinutes,
     windowHours: runtime.opsWeeklyDigest.windowHours,
     startupDelaySeconds: runtime.opsWeeklyDigest.startupDelaySeconds,
+    failureAlertThreshold: runtime.opsWeeklyDigest.failureAlertThreshold,
+    failureAlertCooldownMinutes: runtime.opsWeeklyDigest.failureAlertCooldownMinutes,
+    forceRerunEnabled: runtime.opsWeeklyDigest.forceRerunEnabled,
+    forceRerunDelayMinutes: runtime.opsWeeklyDigest.forceRerunDelayMinutes,
+    forceRerunMaxAttempts: runtime.opsWeeklyDigest.forceRerunMaxAttempts,
+    forceRerunPending: false,
+    forceRerunAttempts: 0,
     totalRuns: 0,
     totalPublished: 0,
     totalFailures: 0,
+    consecutiveFailures: 0,
+    escalationCount: 0,
   };
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1528,7 +1582,7 @@ function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeekl
     status.nextRunAt = undefined;
   };
 
-  const scheduleNext = (delayMs: number) => {
+  const scheduleNext = (delayMs: number, trigger: "interval" | "force-rerun" = "interval") => {
     if (stopped || !status.enabled) {
       return;
     }
@@ -1536,12 +1590,96 @@ function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeekl
     clearTimer();
     status.nextRunAt = new Date(Date.now() + safeDelayMs).toISOString();
     timer = setTimeout(() => {
-      void runNow({ trigger: "interval" });
+      void runNow({ trigger });
     }, safeDelayMs);
   };
 
+  const maybeEscalateFailure = (reason: string) => {
+    if (status.failureAlertThreshold <= 0) {
+      return;
+    }
+    if (status.consecutiveFailures < status.failureAlertThreshold) {
+      return;
+    }
+    const nowMs = Date.now();
+    const cooldownMs = Math.max(1, status.failureAlertCooldownMinutes) * 60_000;
+    const lastEscalatedMs = status.lastEscalatedAt ? new Date(status.lastEscalatedAt).getTime() : 0;
+    if (
+      Number.isFinite(lastEscalatedMs) &&
+      lastEscalatedMs > 0 &&
+      nowMs - lastEscalatedMs < cooldownMs
+    ) {
+      return;
+    }
+    status.lastEscalatedAt = new Date(nowMs).toISOString();
+    status.escalationCount += 1;
+    runtime.logger.error(
+      `[ari-autonomous] ops weekly digest escalation: consecutiveFailures=${status.consecutiveFailures} threshold=${status.failureAlertThreshold} reason=${reason}`,
+    );
+    void callAriPipelinesApi({
+      runtime,
+      method: "POST",
+      path: "/api/ops/alerts/escalate",
+      body: {
+        source: "ari-autonomous.ops-weekly-digest",
+        severity: "critical",
+        message: [
+          `weekly digest publish escalation after ${status.consecutiveFailures} consecutive failures`,
+          `reason=${reason}`,
+          `window=${status.windowHours}h`,
+          `interval=${status.intervalMinutes}m`,
+        ].join(" | "),
+        metadata: {
+          businessUnit: "operations",
+          consecutiveFailures: status.consecutiveFailures,
+          threshold: status.failureAlertThreshold,
+          cooldownMinutes: status.failureAlertCooldownMinutes,
+          forceRerunEnabled: status.forceRerunEnabled,
+          forceRerunDelayMinutes: status.forceRerunDelayMinutes,
+          forceRerunMaxAttempts: status.forceRerunMaxAttempts,
+          forceRerunAttempts: status.forceRerunAttempts,
+          forceRerunPending: status.forceRerunPending,
+          lastError: reason,
+          lastRunAt: status.lastRunAt ?? null,
+          lastCompletedAt: status.lastCompletedAt ?? null,
+          lastPublishedAt: status.lastPublishedAt ?? null,
+        },
+      },
+    }).then((alertResult) => {
+      if (!alertResult.ok) {
+        runtime.logger.warn(
+          `[ari-autonomous] ops weekly digest escalation alert send failed: ${alertResult.error ?? "unknown error"}`,
+        );
+      }
+    });
+  };
+
+  const maybeScheduleForceRerun = (reason: string): boolean => {
+    if (!status.forceRerunEnabled || status.forceRerunMaxAttempts <= 0) {
+      status.forceRerunPending = false;
+      return false;
+    }
+    if (status.forceRerunAttempts >= status.forceRerunMaxAttempts) {
+      status.forceRerunPending = false;
+      runtime.logger.warn(
+        `[ari-autonomous] ops weekly digest force rerun exhausted: attempts=${status.forceRerunAttempts} max=${status.forceRerunMaxAttempts} reason=${reason}`,
+      );
+      return false;
+    }
+    status.forceRerunAttempts += 1;
+    status.forceRerunPending = true;
+    const delayMs = Math.max(1, status.forceRerunDelayMinutes) * 60_000;
+    runtime.logger.warn(
+      `[ari-autonomous] ops weekly digest scheduling force rerun attempt=${status.forceRerunAttempts}/${status.forceRerunMaxAttempts} in ${status.forceRerunDelayMinutes}m reason=${reason}`,
+    );
+    scheduleNext(delayMs, "force-rerun");
+    return true;
+  };
+
   const runNow = async (params?: { trigger?: string; windowHours?: number }): Promise<void> => {
-    const manualTrigger = (params?.trigger ?? "").startsWith("manual");
+    const trigger = params?.trigger ?? "manual";
+    const manualTrigger = trigger.startsWith("manual");
+    const forceRerunTrigger = trigger === "force-rerun";
     if (status.inFlight) {
       return;
     }
@@ -1551,9 +1689,17 @@ function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeekl
 
     clearTimer();
     status.inFlight = true;
-    status.lastTrigger = params?.trigger ?? "manual";
+    status.lastTrigger = trigger;
     status.lastRunAt = new Date().toISOString();
+    if (forceRerunTrigger) {
+      status.forceRerunPending = false;
+      status.lastForcedRerunAt = status.lastRunAt;
+    } else {
+      status.forceRerunPending = false;
+      status.forceRerunAttempts = 0;
+    }
     status.totalRuns += 1;
+    let forceRerunScheduled = false;
     const windowHours =
       typeof params?.windowHours === "number" && Number.isFinite(params.windowHours)
         ? Math.max(24, Math.min(24 * 28, Math.floor(params.windowHours)))
@@ -1571,15 +1717,22 @@ function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeekl
       status.lastCompletedAt = new Date().toISOString();
       if (!result.ok) {
         status.totalFailures += 1;
+        status.consecutiveFailures += 1;
         status.lastError = result.error ?? "request_failed";
+        status.lastPublishStatus = result.status;
         runtime.logger.warn(
           `[ari-autonomous] ops weekly digest publish failed: ${status.lastError}`,
         );
+        maybeEscalateFailure(status.lastError);
+        forceRerunScheduled = maybeScheduleForceRerun(status.lastError);
       } else {
         const payload = asRecord(result.data);
         status.lastPublishStatus = asPositiveInt(payload.publishStatus) ?? undefined;
         if (payload.published === true) {
           status.totalPublished += 1;
+          status.consecutiveFailures = 0;
+          status.forceRerunPending = false;
+          status.forceRerunAttempts = 0;
           status.lastPublishedAt = status.lastCompletedAt;
           status.lastError = undefined;
           runtime.logger.info("[ari-autonomous] ops weekly digest published");
@@ -1587,6 +1740,12 @@ function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeekl
           status.lastError = asTrimmedString(payload.publishError) ?? "weekly_publish_not_sent";
           if (status.lastError !== "webhook_not_configured") {
             status.totalFailures += 1;
+            status.consecutiveFailures += 1;
+            maybeEscalateFailure(status.lastError);
+            forceRerunScheduled = maybeScheduleForceRerun(status.lastError);
+          } else {
+            status.consecutiveFailures = 0;
+            status.forceRerunPending = false;
           }
           runtime.logger.warn(
             `[ari-autonomous] ops weekly digest publish skipped: ${status.lastError}`,
@@ -1595,15 +1754,18 @@ function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeekl
       }
     } catch (error) {
       status.totalFailures += 1;
+      status.consecutiveFailures += 1;
       status.lastCompletedAt = new Date().toISOString();
       status.lastError =
         error instanceof Error && error.message ? error.message : "unexpected_error";
       runtime.logger.warn(
         `[ari-autonomous] ops weekly digest scheduler crashed: ${status.lastError}`,
       );
+      maybeEscalateFailure(status.lastError);
+      forceRerunScheduled = maybeScheduleForceRerun(status.lastError);
     } finally {
       status.inFlight = false;
-      if (!stopped && status.enabled) {
+      if (!stopped && status.enabled && !forceRerunScheduled) {
         scheduleNext(status.intervalMinutes * 60_000);
       }
     }
@@ -2185,10 +2347,11 @@ async function handleOpsWeeklyDigestSchedulerCommand(
   return asReply([
     `ARI ops weekly digest scheduler${parsed.action === "run" ? " run complete" : " status"}`,
     `enabled=${String(status.enabled)} active=${String(status.active)} inFlight=${String(status.inFlight)}`,
-    `interval=${formatMinutes(status.intervalMinutes)} window=${formatNumber(status.windowHours, 0)}h startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s`,
-    `runs=${formatNumber(status.totalRuns, 0)} published=${formatNumber(status.totalPublished, 0)} failures=${formatNumber(status.totalFailures, 0)}`,
+    `interval=${formatMinutes(status.intervalMinutes)} window=${formatNumber(status.windowHours, 0)}h startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s failureThreshold=${formatNumber(status.failureAlertThreshold, 0)} cooldown=${formatMinutes(status.failureAlertCooldownMinutes)}`,
+    `forceRerun enabled=${String(status.forceRerunEnabled)} delay=${formatMinutes(status.forceRerunDelayMinutes)} maxAttempts=${formatNumber(status.forceRerunMaxAttempts, 0)} pending=${String(status.forceRerunPending)} attempts=${formatNumber(status.forceRerunAttempts, 0)}`,
+    `runs=${formatNumber(status.totalRuns, 0)} published=${formatNumber(status.totalPublished, 0)} failures=${formatNumber(status.totalFailures, 0)} consecutiveFailures=${formatNumber(status.consecutiveFailures, 0)} escalations=${formatNumber(status.escalationCount, 0)}`,
     `lastRunAt=${status.lastRunAt ?? "n/a"} lastCompletedAt=${status.lastCompletedAt ?? "n/a"} lastPublishedAt=${status.lastPublishedAt ?? "n/a"} nextRunAt=${status.nextRunAt ?? "n/a"}`,
-    `lastStatus=${formatNumber(status.lastPublishStatus, 0)} lastError=${status.lastError ?? "none"}`,
+    `lastStatus=${formatNumber(status.lastPublishStatus, 0)} lastError=${status.lastError ?? "none"} lastEscalatedAt=${status.lastEscalatedAt ?? "n/a"} lastForcedRerunAt=${status.lastForcedRerunAt ?? "n/a"}`,
     "usage: /ari-ops-weekly-scheduler [status|run [window-hours]]",
   ]);
 }
