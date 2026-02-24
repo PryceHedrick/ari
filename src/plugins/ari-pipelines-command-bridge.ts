@@ -819,6 +819,36 @@ function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopu
     runtime.logger.error(
       `[ari-autonomous] ops dashboard autopublish escalation: consecutiveFailures=${status.consecutiveFailures} threshold=${status.failureAlertThreshold} reason=${reason}`,
     );
+    const alertMessage = [
+      `autopublish escalation after ${status.consecutiveFailures} consecutive failures`,
+      `reason=${reason}`,
+      `window=${status.windowHours}h`,
+      `interval=${status.intervalMinutes}m`,
+    ].join(" | ");
+    void callAriPipelinesApi({
+      runtime,
+      method: "POST",
+      path: "/api/ops/alerts/escalate",
+      body: {
+        source: "ari-autonomous.ops-autopublish",
+        severity: "critical",
+        message: alertMessage,
+        metadata: {
+          consecutiveFailures: status.consecutiveFailures,
+          threshold: status.failureAlertThreshold,
+          cooldownMinutes: status.failureAlertCooldownMinutes,
+          lastError: reason,
+          lastRunAt: status.lastRunAt ?? null,
+          lastCompletedAt: status.lastCompletedAt ?? null,
+        },
+      },
+    }).then((alertResult) => {
+      if (!alertResult.ok) {
+        runtime.logger.warn(
+          `[ari-autonomous] ops dashboard escalation alert send failed: ${alertResult.error ?? "unknown error"}`,
+        );
+      }
+    });
   };
 
   const runNow = async (params?: {
