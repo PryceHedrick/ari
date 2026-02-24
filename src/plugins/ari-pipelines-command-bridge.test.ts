@@ -9,6 +9,7 @@ import {
   parseOpsAckArgs,
   parseOpsCanaryArgs,
   parseP2FeedbackArgs,
+  parseP2FeedbackStatsArgs,
   parseDashboardPublishArgs,
   parseRetryStatusCodes,
   resolveRetryPolicyForRequest,
@@ -257,6 +258,26 @@ describe("parseP2FeedbackArgs", () => {
       outreachId: "outreach-123",
       outcome: "won",
       notes: "client accepted proposal",
+    });
+  });
+});
+
+describe("parseP2FeedbackStatsArgs", () => {
+  it("returns defaults when args are missing", () => {
+    expect(parseP2FeedbackStatsArgs()).toEqual({
+      windowDays: 30,
+      segmentLimit: 10,
+    });
+  });
+
+  it("parses bounded numeric args", () => {
+    expect(parseP2FeedbackStatsArgs("14 5")).toEqual({
+      windowDays: 14,
+      segmentLimit: 5,
+    });
+    expect(parseP2FeedbackStatsArgs("999 999")).toEqual({
+      windowDays: 90,
+      segmentLimit: 25,
     });
   });
 });

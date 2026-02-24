@@ -1900,6 +1900,38 @@ export function parseP2FeedbackArgs(args?: string): {
   };
 }
 
+export function parseP2FeedbackStatsArgs(args?: string): {
+  windowDays: number;
+  segmentLimit: number;
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  const toBoundedInt = (
+    raw: string | undefined,
+    fallback: number,
+    min: number,
+    max: number,
+  ): number => {
+    if (!raw) {
+      return fallback;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.max(min, Math.min(max, Math.floor(parsed)));
+  };
+
+  return {
+    windowDays: toBoundedInt(tokens[0], 30, 7, 90),
+    segmentLimit: toBoundedInt(tokens[1], 10, 1, 25),
+  };
+}
+
 function asReply(textLines: string[]): ReplyPayload {
   return { text: textLines.join("\n") };
 }
@@ -2759,6 +2791,62 @@ async function handleP2FeedbackCommand(
   ]);
 }
 
+async function handleP2FeedbackStatsCommand(
+  runtime: BridgeRuntimeConfig,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseP2FeedbackStatsArgs(args);
+  const query = new URLSearchParams({
+    windowDays: String(parsed.windowDays),
+    segmentLimit: String(parsed.segmentLimit),
+  });
+  const result = await callAriPipelinesApi({
+    runtime,
+    method: "GET",
+    path: `/api/p2/outreach/feedback/stats?${query.toString()}`,
+  });
+  if (!result.ok) {
+    return asReply([`P2 feedback stats failed: ${result.error ?? "unknown error"}`]);
+  }
+
+  const payload = asRecord(result.data);
+  const totals = asRecord(payload.totals);
+  const allTime = asRecord(totals.allTime);
+  const rollingWindow = asRecord(totals.rollingWindow);
+  const rolling7d = asRecord(totals.rolling7d);
+  const rolling30d = asRecord(totals.rolling30d);
+  const deltas = asRecord(totals.deltas);
+  const segments = Array.isArray(payload.segments) ? payload.segments : [];
+
+  const lines = [
+    "P2 feedback analytics",
+    `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowDays=${formatNumber(payload.windowDays, 0)} | segmentLimit=${formatNumber(payload.segmentLimit, 0)} | segmentCount=${formatNumber(payload.segmentCount, 0)}`,
+    `allTime total=${formatNumber(allTime.totalFeedback, 0)} won/meeting/lost/noResp=${formatNumber(allTime.won, 0)}/${formatNumber(allTime.meetingBooked, 0)}/${formatNumber(allTime.lost, 0)}/${formatNumber(allTime.noResponse, 0)} winRate=${formatNumber(allTime.winRate, 3)} positiveRate=${formatNumber(allTime.positiveRate, 3)}`,
+    `window total=${formatNumber(rollingWindow.totalFeedback, 0)} winRate=${formatNumber(rollingWindow.winRate, 3)} positiveRate=${formatNumber(rollingWindow.positiveRate, 3)}`,
+    `rolling7 total=${formatNumber(rolling7d.totalFeedback, 0)} winRate=${formatNumber(rolling7d.winRate, 3)} | rolling30 total=${formatNumber(rolling30d.totalFeedback, 0)} winRate=${formatNumber(rolling30d.winRate, 3)}`,
+    `delta 7v30 winRate=${formatNumber(deltas.winRate7v30, 3)} positiveRate=${formatNumber(deltas.positiveRate7v30, 3)} responseRate=${formatNumber(deltas.responseRate7v30, 3)}`,
+  ];
+
+  if (segments.length === 0) {
+    lines.push("segments: no feedback segments captured yet");
+    lines.push("usage: /ari-p2-feedback-stats [window-days] [segment-limit]");
+    return asReply(lines);
+  }
+
+  lines.push(`top segments (max ${Math.min(segments.length, 10)} shown):`);
+  for (let idx = 0; idx < Math.min(segments.length, 10); idx += 1) {
+    const segment = asRecord(segments[idx]);
+    const key = asTrimmedString(segment.segmentKey) ?? "n/a";
+    const segmentRolling30 = asRecord(segment.rolling30d);
+    const segmentRolling7 = asRecord(segment.rolling7d);
+    lines.push(
+      `${idx + 1}. ${key} | 30d total=${formatNumber(segmentRolling30.totalFeedback, 0)} winRate=${formatNumber(segmentRolling30.winRate, 3)} | 7d total=${formatNumber(segmentRolling7.totalFeedback, 0)} winRate=${formatNumber(segmentRolling7.winRate, 3)} | delta=${formatNumber(segment.winRateDelta7v30, 3)} | scoreAdj=${formatNumber(segment.scoreAdjustment, 0)}`,
+    );
+  }
+  lines.push("usage: /ari-p2-feedback-stats [window-days] [segment-limit]");
+  return asReply(lines);
+}
+
 function withAccessControl(params: {
   runtime: BridgeRuntimeConfig;
   scope: CommandScope;
@@ -3063,6 +3151,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "p2",
       handler: async (ctx) => handleP2FeedbackCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-p2-feedback-stats",
+    description: "Show Pipeline 2 feedback analytics (optional: [window-days] [segment-limit])",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "p2",
+      handler: async (ctx) => handleP2FeedbackStatsCommand(runtime, ctx.args),
     }),
   });
 }
