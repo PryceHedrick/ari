@@ -35,6 +35,13 @@ type BridgeOpsCanaryConfig = {
   channelId?: string;
 };
 
+type BridgeOpsWeeklyDigestConfig = {
+  enabled: boolean;
+  intervalMinutes: number;
+  windowHours: number;
+  startupDelaySeconds: number;
+};
+
 export type BridgeRuntimeConfig = {
   apiBaseUrl: string;
   apiToken?: string;
@@ -44,6 +51,7 @@ export type BridgeRuntimeConfig = {
   approvalRetryAttempts: number;
   opsAutopublish: BridgeOpsAutopublishConfig;
   opsCanary: BridgeOpsCanaryConfig;
+  opsWeeklyDigest: BridgeOpsWeeklyDigestConfig;
   strictRouting: boolean;
   p1Channels: Set<string>;
   p2Channels: Set<string>;
@@ -113,6 +121,25 @@ type OpsCanaryStatus = {
   nextRunAt?: string;
 };
 
+type OpsWeeklyDigestStatus = {
+  enabled: boolean;
+  active: boolean;
+  inFlight: boolean;
+  intervalMinutes: number;
+  windowHours: number;
+  startupDelaySeconds: number;
+  totalRuns: number;
+  totalPublished: number;
+  totalFailures: number;
+  lastTrigger?: string;
+  lastRunAt?: string;
+  lastCompletedAt?: string;
+  lastPublishedAt?: string;
+  lastPublishStatus?: number;
+  lastError?: string;
+  nextRunAt?: string;
+};
+
 type HttpMethod = "GET" | "POST";
 
 type RequestResult = {
@@ -143,6 +170,9 @@ const DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_THRESHOLD = 3;
 const DEFAULT_OPS_AUTOPUBLISH_FAILURE_ALERT_COOLDOWN_MINUTES = 120;
 const DEFAULT_OPS_CANARY_INTERVAL_MINUTES = 24 * 60;
 const DEFAULT_OPS_CANARY_STARTUP_DELAY_SECONDS = 90;
+const DEFAULT_OPS_WEEKLY_DIGEST_INTERVAL_MINUTES = 7 * 24 * 60;
+const DEFAULT_OPS_WEEKLY_DIGEST_WINDOW_HOURS = 168;
+const DEFAULT_OPS_WEEKLY_DIGEST_STARTUP_DELAY_SECONDS = 120;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -372,6 +402,7 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   const retryConfig = asRecord(pluginConfig.retry);
   const opsAutopublishConfig = asRecord(pluginConfig.opsAutopublish);
   const opsCanaryConfig = asRecord(pluginConfig.opsCanary);
+  const opsWeeklyDigestConfig = asRecord(pluginConfig.opsWeeklyDigest);
 
   const apiBaseUrl =
     asTrimmedString(pluginConfig.apiBaseUrl) ??
@@ -474,6 +505,23 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
   const opsCanaryChannelId =
     normalizeChannelId(opsCanaryConfig.channelId) ??
     normalizeChannelId(readEnv("ARI_OPS_CANARY_CHANNEL_ID"));
+  const opsWeeklyDigestEnabled =
+    asBoolean(opsWeeklyDigestConfig.enabled) ??
+    asBoolean(readEnv("ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_ENABLED")) ??
+    false;
+  const opsWeeklyDigestIntervalMinutes =
+    asPositiveInt(opsWeeklyDigestConfig.intervalMinutes) ??
+    asPositiveInt(readEnv("ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_INTERVAL_MINUTES")) ??
+    DEFAULT_OPS_WEEKLY_DIGEST_INTERVAL_MINUTES;
+  const opsWeeklyDigestWindowHoursRaw =
+    asPositiveInt(opsWeeklyDigestConfig.windowHours) ??
+    asPositiveInt(readEnv("ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_WINDOW_HOURS")) ??
+    DEFAULT_OPS_WEEKLY_DIGEST_WINDOW_HOURS;
+  const opsWeeklyDigestWindowHours = Math.max(24, Math.min(24 * 28, opsWeeklyDigestWindowHoursRaw));
+  const opsWeeklyDigestStartupDelaySeconds =
+    asNonNegativeInt(opsWeeklyDigestConfig.startupDelaySeconds) ??
+    asNonNegativeInt(readEnv("ARI_OPS_WEEKLY_DIGEST_AUTOPUBLISH_STARTUP_DELAY_SECONDS")) ??
+    DEFAULT_OPS_WEEKLY_DIGEST_STARTUP_DELAY_SECONDS;
   const strictRouting = asBoolean(routing.strict) ?? true;
 
   const resolved: BridgeRuntimeConfig = {
@@ -508,6 +556,12 @@ function buildRuntimeConfig(api: OpenClawPluginApi): BridgeRuntimeConfig {
       message: opsCanaryMessage,
       businessUnit: opsCanaryBusinessUnit,
       channelId: opsCanaryChannelId,
+    },
+    opsWeeklyDigest: {
+      enabled: opsWeeklyDigestEnabled,
+      intervalMinutes: opsWeeklyDigestIntervalMinutes,
+      windowHours: opsWeeklyDigestWindowHours,
+      startupDelaySeconds: opsWeeklyDigestStartupDelaySeconds,
     },
     strictRouting,
     p1Channels: new Set<string>(),
@@ -1030,6 +1084,29 @@ export function parseOpsCanaryArgs(args?: string): {
   return { action: "run", severity };
 }
 
+function parseOpsWeeklyDigestSchedulerArgs(args?: string): {
+  action: "status" | "run";
+  windowHours?: number;
+} {
+  const tokens = (args ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  if (tokens.length === 0 || tokens[0] === "status") {
+    return { action: "status" };
+  }
+  if (tokens[0] !== "run") {
+    return { action: "status" };
+  }
+  let windowHours: number | undefined;
+  const rawWindow = Number(tokens[1]);
+  if (Number.isFinite(rawWindow) && rawWindow > 0) {
+    windowHours = Math.max(24, Math.min(24 * 28, Math.floor(rawWindow)));
+  }
+  return { action: "run", windowHours };
+}
+
 type OpsAutopublishController = {
   start: () => void;
   stop: () => void;
@@ -1045,6 +1122,13 @@ type OpsCanaryController = {
     severity?: "info" | "warning" | "critical";
   }) => Promise<void>;
   getStatus: () => OpsCanaryStatus;
+};
+
+type OpsWeeklyDigestController = {
+  start: () => void;
+  stop: () => void;
+  runNow: (params?: { trigger?: string; windowHours?: number }) => Promise<void>;
+  getStatus: () => OpsWeeklyDigestStatus;
 };
 
 function createOpsAutopublishController(runtime: BridgeRuntimeConfig): OpsAutopublishController {
@@ -1414,6 +1498,144 @@ function createOpsCanaryController(runtime: BridgeRuntimeConfig): OpsCanaryContr
       status.inFlight = false;
       clearTimer();
       runtime.logger.info("[ari-autonomous] ops canary stopped");
+    },
+    runNow: async (params) => runNow(params),
+    getStatus: () => ({ ...status }),
+  };
+}
+
+function createOpsWeeklyDigestController(runtime: BridgeRuntimeConfig): OpsWeeklyDigestController {
+  const status: OpsWeeklyDigestStatus = {
+    enabled: runtime.opsWeeklyDigest.enabled,
+    active: false,
+    inFlight: false,
+    intervalMinutes: runtime.opsWeeklyDigest.intervalMinutes,
+    windowHours: runtime.opsWeeklyDigest.windowHours,
+    startupDelaySeconds: runtime.opsWeeklyDigest.startupDelaySeconds,
+    totalRuns: 0,
+    totalPublished: 0,
+    totalFailures: 0,
+  };
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = true;
+
+  const clearTimer = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    status.nextRunAt = undefined;
+  };
+
+  const scheduleNext = (delayMs: number) => {
+    if (stopped || !status.enabled) {
+      return;
+    }
+    const safeDelayMs = Math.max(1_000, Math.floor(delayMs));
+    clearTimer();
+    status.nextRunAt = new Date(Date.now() + safeDelayMs).toISOString();
+    timer = setTimeout(() => {
+      void runNow({ trigger: "interval" });
+    }, safeDelayMs);
+  };
+
+  const runNow = async (params?: { trigger?: string; windowHours?: number }): Promise<void> => {
+    const manualTrigger = (params?.trigger ?? "").startsWith("manual");
+    if (status.inFlight) {
+      return;
+    }
+    if ((!status.enabled || stopped) && !manualTrigger) {
+      return;
+    }
+
+    clearTimer();
+    status.inFlight = true;
+    status.lastTrigger = params?.trigger ?? "manual";
+    status.lastRunAt = new Date().toISOString();
+    status.totalRuns += 1;
+    const windowHours =
+      typeof params?.windowHours === "number" && Number.isFinite(params.windowHours)
+        ? Math.max(24, Math.min(24 * 28, Math.floor(params.windowHours)))
+        : status.windowHours;
+
+    try {
+      const result = await callAriPipelinesApi({
+        runtime,
+        method: "POST",
+        path: "/api/ops/digest/weekly/publish",
+        body: {
+          windowHours,
+        },
+      });
+      status.lastCompletedAt = new Date().toISOString();
+      if (!result.ok) {
+        status.totalFailures += 1;
+        status.lastError = result.error ?? "request_failed";
+        runtime.logger.warn(
+          `[ari-autonomous] ops weekly digest publish failed: ${status.lastError}`,
+        );
+      } else {
+        const payload = asRecord(result.data);
+        status.lastPublishStatus = asPositiveInt(payload.publishStatus) ?? undefined;
+        if (payload.published === true) {
+          status.totalPublished += 1;
+          status.lastPublishedAt = status.lastCompletedAt;
+          status.lastError = undefined;
+          runtime.logger.info("[ari-autonomous] ops weekly digest published");
+        } else {
+          status.lastError = asTrimmedString(payload.publishError) ?? "weekly_publish_not_sent";
+          if (status.lastError !== "webhook_not_configured") {
+            status.totalFailures += 1;
+          }
+          runtime.logger.warn(
+            `[ari-autonomous] ops weekly digest publish skipped: ${status.lastError}`,
+          );
+        }
+      }
+    } catch (error) {
+      status.totalFailures += 1;
+      status.lastCompletedAt = new Date().toISOString();
+      status.lastError =
+        error instanceof Error && error.message ? error.message : "unexpected_error";
+      runtime.logger.warn(
+        `[ari-autonomous] ops weekly digest scheduler crashed: ${status.lastError}`,
+      );
+    } finally {
+      status.inFlight = false;
+      if (!stopped && status.enabled) {
+        scheduleNext(status.intervalMinutes * 60_000);
+      }
+    }
+  };
+
+  return {
+    start: () => {
+      if (!status.enabled) {
+        runtime.logger.info("[ari-autonomous] ops weekly digest scheduler disabled");
+        return;
+      }
+      if (!stopped) {
+        return;
+      }
+      stopped = false;
+      status.active = true;
+      const delayMs = Math.max(0, status.startupDelaySeconds * 1_000);
+      if (delayMs === 0) {
+        void runNow({ trigger: "startup" });
+      } else {
+        scheduleNext(delayMs);
+      }
+      runtime.logger.info(
+        `[ari-autonomous] ops weekly digest scheduler started interval=${status.intervalMinutes}m window=${status.windowHours}h`,
+      );
+    },
+    stop: () => {
+      stopped = true;
+      status.active = false;
+      status.inFlight = false;
+      clearTimer();
+      runtime.logger.info("[ari-autonomous] ops weekly digest scheduler stopped");
     },
     runNow: async (params) => runNow(params),
     getStatus: () => ({ ...status }),
@@ -1948,6 +2170,29 @@ async function handleOpsCanaryCommand(
   ]);
 }
 
+async function handleOpsWeeklyDigestSchedulerCommand(
+  controller: OpsWeeklyDigestController,
+  args?: string,
+): Promise<ReplyPayload> {
+  const parsed = parseOpsWeeklyDigestSchedulerArgs(args);
+  if (parsed.action === "run") {
+    await controller.runNow({
+      trigger: "manual-command",
+      windowHours: parsed.windowHours,
+    });
+  }
+  const status = controller.getStatus();
+  return asReply([
+    `ARI ops weekly digest scheduler${parsed.action === "run" ? " run complete" : " status"}`,
+    `enabled=${String(status.enabled)} active=${String(status.active)} inFlight=${String(status.inFlight)}`,
+    `interval=${formatMinutes(status.intervalMinutes)} window=${formatNumber(status.windowHours, 0)}h startupDelay=${formatNumber(status.startupDelaySeconds, 0)}s`,
+    `runs=${formatNumber(status.totalRuns, 0)} published=${formatNumber(status.totalPublished, 0)} failures=${formatNumber(status.totalFailures, 0)}`,
+    `lastRunAt=${status.lastRunAt ?? "n/a"} lastCompletedAt=${status.lastCompletedAt ?? "n/a"} lastPublishedAt=${status.lastPublishedAt ?? "n/a"} nextRunAt=${status.nextRunAt ?? "n/a"}`,
+    `lastStatus=${formatNumber(status.lastPublishStatus, 0)} lastError=${status.lastError ?? "none"}`,
+    "usage: /ari-ops-weekly-scheduler [status|run [window-hours]]",
+  ]);
+}
+
 async function handleP1RunCommand(
   runtime: BridgeRuntimeConfig,
   args?: string,
@@ -2373,6 +2618,7 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
   const runtime = buildRuntimeConfig(api);
   const opsAutopublish = createOpsAutopublishController(runtime);
   const opsCanary = createOpsCanaryController(runtime);
+  const opsWeeklyDigest = createOpsWeeklyDigestController(runtime);
 
   api.logger.info(
     `[ari-autonomous] command bridge active: baseUrl=${runtime.apiBaseUrl} strictRouting=${runtime.strictRouting}`,
@@ -2382,10 +2628,12 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
     start: () => {
       opsAutopublish.start();
       opsCanary.start();
+      opsWeeklyDigest.start();
     },
     stop: () => {
       opsAutopublish.stop();
       opsCanary.stop();
+      opsWeeklyDigest.stop();
     },
   });
 
@@ -2463,6 +2711,17 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async (ctx) => handleOpsWeeklyDigestPublishCommand(runtime, ctx.args),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-ops-weekly-scheduler",
+    description: "Show or run weekly digest scheduler (optional: run [window-hours])",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => handleOpsWeeklyDigestSchedulerCommand(opsWeeklyDigest, ctx.args),
     }),
   });
 

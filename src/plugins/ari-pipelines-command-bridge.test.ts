@@ -49,6 +49,12 @@ function buildRuntime(overrides?: Partial<BridgeRuntimeConfig>): BridgeRuntimeCo
       businessUnit: "operations",
       channelId: undefined,
     },
+    opsWeeklyDigest: {
+      enabled: false,
+      intervalMinutes: 7 * 24 * 60,
+      windowHours: 168,
+      startupDelaySeconds: 120,
+    },
     strictRouting: true,
     p1Channels: new Set<string>(),
     p2Channels: new Set<string>(),
