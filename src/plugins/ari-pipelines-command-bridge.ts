@@ -1445,6 +1445,12 @@ async function handleOpsSlaCommand(
   const p1 = asRecord(pipelines.p1);
   const p2 = asRecord(pipelines.p2);
   const canary = asRecord(payload.canary);
+  const adapters = asRecord(payload.adapters);
+  const adapterProviders = asRecord(adapters.providers);
+  const adapterX = asRecord(adapterProviders.x);
+  const adapterReddit = asRecord(adapterProviders.reddit);
+  const adapterYouTube = asRecord(adapterProviders.youtube);
+  const adapterEbay = asRecord(adapterProviders.ebay);
   const budget = asRecord(payload.budget);
   const alerts = Array.isArray(payload.alerts) ? payload.alerts : [];
 
@@ -1453,6 +1459,8 @@ async function handleOpsSlaCommand(
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
     `p1: runs=${formatNumber(p1.totalRuns, 0)} successRate=${formatNumber(p1.successRate, 3)} avgDurationSec=${formatNumber(Number(p1.averageDurationMs) / 1000, 1)} avgCostUsd=${formatNumber(p1.averageCostUsd, 3)}`,
     `p2: runs=${formatNumber(p2.totalRuns, 0)} successRate=${formatNumber(p2.successRate, 3)} avgDurationSec=${formatNumber(Number(p2.averageDurationMs) / 1000, 1)} avgCostUsd=${formatNumber(p2.averageCostUsd, 3)}`,
+    `adapters: requests=${formatNumber(adapters.totalRequests, 0)} failed=${formatNumber(adapters.failedRequests, 0)} retryRate=${formatNumber(adapters.retryRate, 3)} failureRate=${formatNumber(adapters.failureRate, 3)} avgAttempts=${formatNumber(adapters.averageAttempts, 3)}`,
+    `adapterProviderRetryRate x/reddit/youtube/ebay=${formatNumber(adapterX.retryRate, 3)}/${formatNumber(adapterReddit.retryRate, 3)}/${formatNumber(adapterYouTube.retryRate, 3)}/${formatNumber(adapterEbay.retryRate, 3)}`,
     `canary: runs=${formatNumber(canary.totalRuns, 0)} notified=${formatNumber(canary.notifiedRuns, 0)} sent=${formatNumber(canary.sentRuns, 0)} failed=${formatNumber(canary.failedRuns, 0)} sendRate=${formatNumber(canary.sendRate, 3)} failureRate=${formatNumber(canary.failureRate, 3)}`,
     `budget: remainingUsd=${formatNumber(budget.dailyRemainingUsd, 2)} usedUsd=${formatNumber(budget.dailyUsedUsd, 2)} limitUsd=${formatNumber(budget.dailyLimitUsd, 2)}`,
   ];
@@ -1494,6 +1502,7 @@ async function handleOpsDashboardCommand(
   const p1 = asRecord(pipelines.p1);
   const p2 = asRecord(pipelines.p2);
   const canary = asRecord(snapshot.canary);
+  const adapters = asRecord(snapshot.adapters);
   const alerts = Array.isArray(snapshot.alerts) ? snapshot.alerts.length : 0;
 
   return asReply([
@@ -1501,6 +1510,7 @@ async function handleOpsDashboardCommand(
     `generatedAt: ${asTrimmedString(payload.generatedAt) ?? "n/a"} | windowHours=${formatNumber(payload.windowHours, 0)}`,
     `artifactPath: ${asTrimmedString(payload.artifactPath) ?? "n/a"}`,
     `p1Runs=${formatNumber(p1.totalRuns, 0)} p1SuccessRate=${formatNumber(p1.successRate, 3)} p2Runs=${formatNumber(p2.totalRuns, 0)} p2SuccessRate=${formatNumber(p2.successRate, 3)}`,
+    `adapters requests=${formatNumber(adapters.totalRequests, 0)} failed=${formatNumber(adapters.failedRequests, 0)} retryRate=${formatNumber(adapters.retryRate, 3)} failureRate=${formatNumber(adapters.failureRate, 3)}`,
     `canaryRuns=${formatNumber(canary.totalRuns, 0)} canaryFailed=${formatNumber(canary.failedRuns, 0)} canarySendRate=${formatNumber(canary.sendRate, 3)}`,
     `alerts=${alerts}`,
   ]);
@@ -1533,6 +1543,7 @@ async function handleOpsDashboardPublishCommand(
   const p1Holds = asRecord(p1Queue.holdReasons);
   const p2Holds = asRecord(p2Queue.holdReasons);
   const canary = asRecord(snapshot.canary);
+  const adapters = asRecord(snapshot.adapters);
   const alerts = Array.isArray(snapshot.alerts) ? snapshot.alerts.length : 0;
   return asReply([
     "ARI ops dashboard publish",
@@ -1542,6 +1553,7 @@ async function handleOpsDashboardPublishCommand(
     `webhookConfigured: ${String(webhookConfigured)}`,
     `published: ${String(published)}`,
     `status: ${formatNumber(payload.publishStatus, 0)} error: ${asTrimmedString(payload.publishError) ?? "none"}`,
+    `adapters requests/failed/retryRate/failureRate=${formatNumber(adapters.totalRequests, 0)}/${formatNumber(adapters.failedRequests, 0)}/${formatNumber(adapters.retryRate, 3)}/${formatNumber(adapters.failureRate, 3)}`,
     `alerts=${formatNumber(alerts, 0)} canary(sent/notified/failed)=${formatNumber(canary.sentRuns, 0)}/${formatNumber(canary.notifiedRuns, 0)}/${formatNumber(canary.failedRuns, 0)}`,
     `holds p1(gov/budget/dataGap)=${formatNumber(p1Holds.governanceHold, 0)}/${formatNumber(p1Holds.budgetHold, 0)}/${formatNumber(p1Holds.dataGap, 0)} p2=${formatNumber(p2Holds.governanceHold, 0)}/${formatNumber(p2Holds.budgetHold, 0)}/${formatNumber(p2Holds.dataGap, 0)}`,
   ]);
