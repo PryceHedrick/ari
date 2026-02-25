@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { writeCronState, MARKET_SNAPSHOT_KEY } from "../ari-memory/src/cron-state.js";
 import {
   evaluateAlerts,
   buildCommunitySnapshot,
@@ -69,6 +70,12 @@ const plugin = {
         taskId,
         channel: ctx.channel ?? "market-alerts",
       });
+
+      // Pre-fetch handoff: persist snapshot so morning-briefing can read it
+      // even if the process restarts between 05:00 and 06:30 (Section 6, plan)
+      if (taskId === "pre-fetch-market") {
+        writeCronState(MARKET_SNAPSHOT_KEY, snapshot);
+      }
 
       // Send alerts that pass quiet hours gate
       const sendableAlerts = alerts.filter((a) => shouldSendAlert(a));

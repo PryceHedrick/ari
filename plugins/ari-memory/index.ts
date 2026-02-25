@@ -1,6 +1,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { processBookmark } from "./src/bookmark-pipeline.js";
+import { cleanupExpiredCronState, getCronStateStats } from "./src/cron-state.js";
 import { saveMemory, queryMemories, getMemoryStats } from "./src/memory-db.js";
 import { searchMemories, indexMemory, getIndexStats } from "./src/tfidf-search.js";
 import { loadWorkspaceContext } from "./src/workspace-context.js";
@@ -159,12 +160,18 @@ const plugin = {
       const recent = queryMemories({ limit: 1 });
       const hasRecent = recent.length > 0;
 
+      // Also clean up expired CronStateEnvelope entries
+      const cronDeleted = cleanupExpiredCronState();
+      const cronStats = getCronStateStats();
+
       api.emit?.("ari:memory:dedup_complete", {
         memories: stats.memories,
         bookmarks: stats.bookmarks,
         indexedTerms: stats.indexedTerms,
         avgTermsPerDoc: indexStats.avgTermsPerDoc,
         hasRecentMemory: hasRecent,
+        cronStateExpiredDeleted: cronDeleted,
+        cronStateRemaining: cronStats.total,
         completedAt: new Date().toISOString(),
       });
     });

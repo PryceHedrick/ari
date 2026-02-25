@@ -1,9 +1,12 @@
 {
   "name": "@ari/market",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI market intelligence — crypto/stock/Pokemon monitoring + anomaly detection",
   "type": "module",
-  "private": true,
+  "dependencies": {
+    "@ari/memory": "workspace:*"
+  },
   "devDependencies": {
     "openclaw": "workspace:*"
   },

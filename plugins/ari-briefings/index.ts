@@ -1,5 +1,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import type { MarketSnapshot } from "../ari-market/src/market-monitor.js";
+import { readCronState, MARKET_SNAPSHOT_KEY } from "../ari-memory/src/cron-state.js";
 import { buildBriefing } from "./src/briefing-builder.js";
 import type { BriefingData } from "./src/briefing-builder.js";
 
@@ -44,9 +46,43 @@ const plugin = {
             ? "workday-wrap"
             : "evening";
 
-      // Briefing data is assembled from ari-market and ari-workspace context
-      // The actual data is passed via the task payload or fetched from shared state
+      // Briefing data: task payload takes priority; fall back to CronStateEnvelope.
+      // The pre-fetch-market task (05:00) writes the market snapshot to SQLite so
+      // morning-briefing (06:30) can recover it after a potential restart.
       const data = (ctx.briefingData ?? {}) as Partial<BriefingData>;
+
+      // Hydrate market data from CronStateEnvelope if not already in payload
+      if (!data.market && type === "morning") {
+        const cached = readCronState<MarketSnapshot>(MARKET_SNAPSHOT_KEY);
+        if (cached) {
+          const priceMap = new Map(cached.prices.map((p) => [p.symbol, p]));
+          data.market = {
+            btc: priceMap.has("BTC")
+              ? { price: priceMap.get("BTC")!.price, changePct: priceMap.get("BTC")!.changePct24h }
+              : undefined,
+            eth: priceMap.has("ETH")
+              ? { price: priceMap.get("ETH")!.price, changePct: priceMap.get("ETH")!.changePct24h }
+              : undefined,
+            sol: priceMap.has("SOL")
+              ? { price: priceMap.get("SOL")!.price, changePct: priceMap.get("SOL")!.changePct24h }
+              : undefined,
+            gspc: priceMap.has("^GSPC")
+              ? { changePct: priceMap.get("^GSPC")!.changePct24h }
+              : undefined,
+            ixic: priceMap.has("^IXIC")
+              ? { changePct: priceMap.get("^IXIC")!.changePct24h }
+              : undefined,
+            nvda: priceMap.has("NVDA")
+              ? { changePct: priceMap.get("NVDA")!.changePct24h }
+              : undefined,
+            alerts: cached.alerts.map((a) => `${a.symbol}: ${a.message}`),
+            vix: cached.macro?.find((m) => m.symbol === "VIX")?.value,
+            treasury10y: cached.macro?.find((m) => m.symbol === "10Y")?.value,
+            dxy: cached.macro?.find((m) => m.symbol === "DXY")?.value,
+            gold: cached.macro?.find((m) => m.symbol === "GOLD")?.value,
+          };
+        }
+      }
 
       const result = buildBriefing({
         type,

@@ -1,9 +1,13 @@
 {
   "name": "@ari/briefings",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI briefings — morning/workday wrap/evening summaries delivered to Discord",
   "type": "module",
-  "private": true,
+  "dependencies": {
+    "@ari/market": "workspace:*",
+    "@ari/memory": "workspace:*"
+  },
   "devDependencies": {
     "openclaw": "workspace:*"
   },
