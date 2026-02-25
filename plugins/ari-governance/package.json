@@ -2,7 +2,7 @@
   "name": "@ari/governance",
   "version": "1.0.0",
   "private": true,
-  "description": "ARI constitutional governance — Council of 15 + Arbiter + Overseer",
+  "description": "ARI governance — 3-gate model (auto/approval-required/operator-only) + Pryce approval queue",
   "type": "module",
   "devDependencies": {
     "openclaw": "workspace:*"

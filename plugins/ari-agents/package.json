@@ -2,7 +2,7 @@
   "name": "@ari/agents",
   "version": "1.0.0",
   "private": true,
-  "description": "ARI swarm coordination — DAG dependency resolution + 3-lane execution pods",
+  "description": "ARI named agent coordinator — NOVA/CHASE/PULSE/DEX/RUNE with APEX/CODEX plane enforcement",
   "type": "module",
   "devDependencies": {
     "openclaw": "workspace:*"
