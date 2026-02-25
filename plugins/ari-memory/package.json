@@ -1,10 +1,14 @@
 {
   "name": "@ari/memory",
   "version": "1.0.0",
-  "description": "ARI memory — provenance-tracked knowledge base with SQLite WAL + Qdrant",
-  "type": "module",
   "private": true,
+  "description": "ARI memory — provenance-tracked knowledge base with SQLite WAL + TF-IDF index",
+  "type": "module",
+  "dependencies": {
+    "better-sqlite3": "12.6.2"
+  },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "openclaw": "workspace:*"
   },
   "peerDependencies": {

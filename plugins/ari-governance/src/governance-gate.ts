@@ -10,71 +10,129 @@ type ToolCallResult = {
   blockReason?: string;
 };
 
-type GovernanceThreshold = "auto" | "majority" | "supermajority";
+/**
+ * ARI 3-Gate Governance Model
+ *
+ * Gate 1 — auto:             Low-risk, internal, reversible. ARI approves with trace record.
+ * Gate 2 — approval-required: Public-facing, external comms, content. Pryce approves via Discord ✅/❌.
+ * Gate 3 — operator-only:    Irreversible, high-stakes. Pryce must issue explicit slash command.
+ *
+ * ZERO bypass permitted. No exceptions. Pryce = CEO. All gates report to him.
+ */
+type GovernanceGate = "auto" | "approval-required" | "operator-only";
 
 type GovernanceDecision = {
-  threshold: GovernanceThreshold;
+  gate: GovernanceGate;
   approved: boolean;
-  requiresManualApproval: boolean;
+  requiresHumanAction: boolean;
   reason: string;
 };
 
-const MAJORITY_PATTERNS = [/publish/i, /outreach/i, /send/i, /post/i];
-const SUPERMAJORITY_PATTERNS = [/delete/i, /drop/i, /wipe/i, /reset/i, /transfer/i];
+// Gate 2: requires Pryce's Discord approval button
+const APPROVAL_REQUIRED_PATTERNS = [
+  /publish/i,
+  /outreach/i,
+  /send/i,
+  /post/i,
+  /upload/i,
+  /schedule/i,
+  /queue.*video/i,
+  /queue.*content/i,
+];
 
-function resolveThreshold(toolName: string): GovernanceThreshold {
-  if (SUPERMAJORITY_PATTERNS.some((pattern) => pattern.test(toolName))) {
-    return "supermajority";
+// Gate 3: requires explicit slash command from Pryce
+const OPERATOR_ONLY_PATTERNS = [
+  /delete/i,
+  /drop/i,
+  /wipe/i,
+  /reset/i,
+  /transfer/i,
+  /force/i,
+  /irreversible/i,
+  /purge/i,
+  /remove.*all/i,
+];
+
+function resolveGate(toolName: string): GovernanceGate {
+  if (OPERATOR_ONLY_PATTERNS.some((pattern) => pattern.test(toolName))) {
+    return "operator-only";
   }
-  if (MAJORITY_PATTERNS.some((pattern) => pattern.test(toolName))) {
-    return "majority";
+  if (APPROVAL_REQUIRED_PATTERNS.some((pattern) => pattern.test(toolName))) {
+    return "approval-required";
   }
   return "auto";
 }
 
-function isExplicitlyApproved(params: Record<string, unknown>): boolean {
-  return params.approved === true || params.manualApproval === true;
+/**
+ * Check if action carries explicit Pryce approval from Discord.
+ * approval-required gate: params.approved=true OR params.discordApproval=true
+ * ZERO bypass permitted — only these two fields are accepted.
+ */
+function hasPryceApproval(params: Record<string, unknown>): boolean {
+  return params.approved === true || params.discordApproval === true;
 }
 
-function hasSupermajorityMarker(params: Record<string, unknown>): boolean {
-  const vote = typeof params.governanceVote === "string" ? params.governanceVote.toLowerCase() : "";
-  return vote === "supermajority" || vote === "11/15+";
+/**
+ * Check if action carries operator-only authorization.
+ * operator-only gate: must have params.operatorCommand=true (set by slash command handler)
+ */
+function hasOperatorAuthorization(params: Record<string, unknown>): boolean {
+  return params.operatorCommand === true || params.slash_command === true;
 }
 
 export function evaluateToolCallGovernance(event: ToolCallEvent): GovernanceDecision {
-  const threshold = resolveThreshold(event.toolName);
-  if (threshold === "auto") {
+  const gate = resolveGate(event.toolName);
+
+  if (gate === "auto") {
     return {
-      threshold,
+      gate,
       approved: true,
-      requiresManualApproval: false,
-      reason: "Low-risk action auto-permitted by governance policy.",
+      requiresHumanAction: false,
+      reason: "Low-risk action auto-approved. ARI logs with trace record.",
     };
   }
 
-  if (!isExplicitlyApproved(event.params)) {
+  if (gate === "approval-required") {
+    if (!hasPryceApproval(event.params)) {
+      return {
+        gate,
+        approved: false,
+        requiresHumanAction: true,
+        reason: `"${event.toolName}" requires Pryce's approval. Post to Discord approval queue — await ✅/❌ button response.`,
+      };
+    }
     return {
-      threshold,
-      approved: false,
-      requiresManualApproval: true,
-      reason: `Action "${event.toolName}" requires explicit approval before execution.`,
+      gate,
+      approved: true,
+      requiresHumanAction: true,
+      reason: `"${event.toolName}" approved by Pryce via Discord.`,
     };
   }
 
-  if (threshold === "supermajority" && !hasSupermajorityMarker(event.params)) {
+  // operator-only gate
+  if (!hasOperatorAuthorization(event.params)) {
     return {
-      threshold,
+      gate,
       approved: false,
-      requiresManualApproval: true,
-      reason: `Action "${event.toolName}" requires supermajority council vote marker.`,
+      requiresHumanAction: true,
+      reason: `"${event.toolName}" is an operator-only action. Pryce must issue explicit slash command. No automatic approval path exists.`,
+    };
+  }
+
+  if (!hasPryceApproval(event.params)) {
+    return {
+      gate,
+      approved: false,
+      requiresHumanAction: true,
+      reason: `"${event.toolName}" requires both operator authorization AND Pryce's explicit approval.`,
     };
   }
 
   return {
-    threshold,
+    gate,
     approved: true,
-    requiresManualApproval: true,
-    reason: `Action "${event.toolName}" approved through ${threshold} governance gate.`,
+    requiresHumanAction: true,
+    reason: `"${event.toolName}" operator-only action authorized by Pryce.`,
   };
 }
 

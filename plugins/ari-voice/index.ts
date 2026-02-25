@@ -1,35 +1,75 @@
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { synthesizeSpeech, buildDiscordVoicePayload } from "./src/tts.js";
 
 /**
- * ARI Voice Plugin — ElevenLabs TTS + Whisper STT.
+ * ARI Voice Plugin — ElevenLabs TTS (eleven_turbo_v2_5) for Discord.
  *
- * Phase 2 stub: registers plugin identity.
- * Phase 3 deferred: full voice pipeline.
+ * Activation: ARI_VOICE_ENABLED=true
+ * Model: eleven_turbo_v2_5 — 40-50ms latency
+ * Format: OGG Vorbis → Discord attachment via multipart/form-data
+ * Settings: stability(0.5), similarity_boost(0.8), style(0.3)
+ * Max: 150 words (enforced — briefing audio only)
  *
- * TTS (ElevenLabs):
- * - Model: eleven_turbo_v2_5 (best quality/latency balance)
- * - Output: MP3 buffer → Discord message attachment
- * - Use case: Morning briefing audio (150 words max, <90 seconds)
- * - API: multipart/form-data POST to ElevenLabs REST API
- *
- * STT (Whisper/WisprFlow):
- * - Input: Voice message from Discord #voice-notes channel
- * - Output: Transcribed text → ARI processes as text query
- * - Response: Text embed + optional voice reply in same channel
- *
- * Source: src/plugins/telegram-bot/voice-handler.ts (migrate to Discord)
+ * Listens for 'ari:briefing:ready' events with audioText.
+ * If voice enabled and text provided, synthesizes and emits voice payload.
  */
+
 const plugin = {
-  id: 'ari-voice',
-  name: 'ARI Voice',
-  description: 'ElevenLabs TTS (eleven_turbo_v2_5) + Whisper STT for Discord',
+  id: "ari-voice",
+  name: "ARI Voice",
+  description: "ElevenLabs TTS (eleven_turbo_v2_5) + Discord OGG voice attachments",
   configSchema: emptyPluginConfigSchema(),
-  register(_api: OpenClawPluginApi): void {
-    // Phase 3: api.registerService({ id: 'tts', start: initElevenLabs })
-    // Phase 3: api.registerService({ id: 'stt', start: initWhisper })
-    // Phase 3: Handle voice messages in #voice-notes Discord channel
+  register(api: OpenClawPluginApi): void {
+    // Gate check at registration time
+    if (process.env.ARI_VOICE_ENABLED !== "true") {
+      return;
+    }
+    if (!process.env.ELEVENLABS_API_KEY) {
+      return;
+    }
+
+    // Listen for briefing events that include audioText
+    api.on("ari:briefing:ready", (event) => {
+      const ctx = event as Record<string, unknown>;
+      const audioText = typeof ctx.audioText === "string" ? ctx.audioText : "";
+      const channel = typeof ctx.channel === "string" ? ctx.channel : "ari-main";
+
+      if (!audioText) {
+        return;
+      }
+
+      // Async synthesis — don't block the event handler
+      synthesizeSpeech({ text: audioText })
+        .then((result) => {
+          if (!result.success) {
+            api.emit?.("ari:voice:error", { error: result.error, channel });
+            return;
+          }
+
+          const embedJson = {
+            content: "🎙️ _ARI morning briefing — voice_",
+          };
+          const payload = buildDiscordVoicePayload(result.audioBuffer, embedJson);
+
+          api.emit?.("ari:voice:ready", {
+            boundary: payload.boundary,
+            body: payload.body,
+            channel,
+            wordCount: result.wordCount,
+          });
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          api.emit?.("ari:voice:error", { error: msg, channel });
+          // Fallback: guarantee error is observable even if api.emit is unavailable
+          if (!api.emit) {
+            console.error("[ari-voice] synthesis error:", msg);
+          }
+        });
+    });
   },
 };
 
+export { synthesizeSpeech };
 export default plugin;
