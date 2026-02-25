@@ -19,7 +19,7 @@
 
 export type ModelTier = "opus" | "sonnet" | "haiku";
 export type ResearchDepth = "deep" | "reasoning" | "pro" | "basic";
-export type ContextPlane = "apex" | "codex";
+export type ContextPlane = "zoe" | "codex";
 
 export type TaskContext = {
   agentName?: string;
@@ -164,6 +164,18 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
     const name = ctx.agentName.toUpperCase();
     const profile = AGENT_PROFILES[name];
     if (profile) {
+      // CHASE escalates to Opus for deep lead qualification (plan Section 3.1)
+      // "CHASE 🎯 (+ Opus for deep qualify)" — high-stakes = P2 revenue on the line
+      if (
+        name === "CHASE" &&
+        (ctx.researchDepth === "deep" || (ctx.stakes !== undefined && ctx.stakes >= 85))
+      ) {
+        return {
+          provider: "openrouter",
+          model: "anthropic/claude-opus-4-6",
+          reason: "CHASE deep qualification → Opus (high-stakes lead qualify, P2 revenue path)",
+        };
+      }
       return {
         provider: profile.provider,
         model: profile.model,

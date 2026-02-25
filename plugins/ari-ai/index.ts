@@ -6,8 +6,8 @@ import { routeToModel, computeValueScore, getCacheConfig } from "./src/value-sco
  * ARI AI Plugin — ValueScorer model routing via OpenRouter
  *
  * Routes every LLM call to the highest-quality model appropriate for the task:
- *   - Named agents → designated model (APEX/CODEX plane aware)
- *   - Engineering → RUNE_PRIMARY_MODEL (Sprint 0 winner: Codex 5.3 or claude-sonnet-4-6)
+ *   - Named agents → designated model (ZOE/CODEX plane aware)
+ *   - Engineering → RUNE_PRIMARY_MODEL (default: claude-sonnet-4-6; override via env for Sprint 0 winner)
  *   - Web research → Perplexity tier-aware (sonar-deep / sonar-reasoning-pro / sonar-pro / sonar)
  *   - Long context >100K → Gemini 2.5 Flash overflow
  *   - Default → ValueScore: score ≥85 → opus | 60-84 → sonnet | <60 → haiku

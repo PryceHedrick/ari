@@ -3,25 +3,23 @@ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { registerGovernanceGate } from "./src/governance-gate.js";
 
 /**
- * ARI Governance Plugin — Constitutional governance for destructive operations.
+ * ARI Governance Plugin — 3-gate model for all consequential operations.
  *
- * Phase 2 stub: registers plugin identity.
- * Phase 3 deferred: full Council of 15 voting + Arbiter + Overseer implementation.
+ * Three gates (plan Section 11 / ADR-governance):
+ *   auto             — Low-risk ops; ARI permits with audit trace
+ *   approval-required — Publish / outreach; embed in Discord approval queue, Pryce decides
+ *   operator-only    — Irreversible ops; explicit slash command from Pryce required
  *
- * Council of 15 (preserved exactly from ARI v10):
- * Infrastructure: ATLAS(router), BOLT(executor), ECHO(memory)
- * Protection: AEGIS(guardian), SCOUT(risk)
- * Strategy: TRUE(planner), TEMPO(scheduler), OPAL(resources)
- * Life: PULSE(wellness), EMBER(relationships), PRISM(creative), MINT(wealth), BLOOM(growth)
- * Meta: VERA(ethics), NEXUS(integrator)
+ * Every gate decision is written to a JSONL audit log with SHA-256 previousHash chain.
+ * No outreach is sent, no video published, without Pryce's explicit Discord approval.
  *
- * Voting thresholds: MAJORITY 8/15 | SUPERMAJORITY 11/15 | UNANIMOUS 15/15
- * Source: src/governance/ (council.ts, arbiter.ts, overseer.ts, policy-engine.ts)
+ * Source: src/governance/governance-gate.ts
  */
 const plugin = {
   id: "ari-governance",
   name: "ARI Governance",
-  description: "Council of 15 voting + Arbiter constitutional rules + Overseer quality gates",
+  description:
+    "3-gate approval model (auto / approval-required / operator-only) — Pryce approves all consequential ops",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi): void {
     registerGovernanceGate(api);

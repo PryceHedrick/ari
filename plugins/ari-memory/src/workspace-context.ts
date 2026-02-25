@@ -1,13 +1,15 @@
 /**
  * ARI Workspace Context Loader — reads workspace files from ~/.ari/workspace/
  *
- * APEX plane (ARI, NOVA, CHASE, PULSE, DEX):
+ * ZOE plane (ARI, NOVA, CHASE, PULSE, DEX — full business context):
  *   Loads: SOUL.md + USER.md + HEARTBEAT.md + GOALS.md + AGENTS.md + MEMORY.md + RECOVERY.md
  *   Also loads: ~/.ari/workspace/agents/{agentName}/SOUL.md if agentName is specified
  *
- * CODEX plane (RUNE — engineering only):
+ * CODEX plane (RUNE — engineering only, NO business context):
  *   Loads: AGENTS.md ONLY
  *   PROHIBITED: SOUL files, USER.md, HEARTBEAT.md, GOALS.md, MEMORY.md, personal data
+ *
+ * Note: "CODEX plane" = context isolation concept. Not named after any AI model.
  */
 
 import { readFileSync } from "node:fs";
@@ -16,7 +18,7 @@ import path from "node:path";
 
 const ARI_WORKSPACE = path.join(homedir(), ".ari", "workspace");
 
-const APEX_FILES = [
+const ZOE_FILES = [
   "SOUL.md",
   "USER.md",
   "HEARTBEAT.md",
@@ -42,7 +44,7 @@ function readWorkspaceFile(filePath: string): string | null {
 export interface WorkspaceContextResult {
   files: Record<string, string>;
   agentSoul?: string;
-  plane: "apex" | "codex";
+  plane: "zoe" | "codex";
   totalChars: number;
   missingFiles: string[];
 }
@@ -53,9 +55,9 @@ export interface WorkspaceContextResult {
  */
 export function loadWorkspaceContext(
   agentName?: string,
-  plane: "apex" | "codex" = "apex",
+  plane: "zoe" | "codex" = "zoe",
 ): WorkspaceContextResult {
-  const fileList = plane === "codex" ? CODEX_FILES : APEX_FILES;
+  const fileList = plane === "codex" ? CODEX_FILES : ZOE_FILES;
   const files: Record<string, string> = {};
   const missingFiles: string[] = [];
 
@@ -68,9 +70,9 @@ export function loadWorkspaceContext(
     }
   }
 
-  // Load agent SOUL file for APEX plane (never for CODEX)
+  // Load agent SOUL file for ZOE plane (never for CODEX)
   let agentSoul: string | undefined;
-  if (plane === "apex" && agentName) {
+  if (plane === "zoe" && agentName) {
     const soulPath = path.join(ARI_WORKSPACE, "agents", agentName.toLowerCase(), "SOUL.md");
     const soul = readWorkspaceFile(soulPath);
     if (soul) {

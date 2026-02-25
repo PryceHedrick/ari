@@ -3,77 +3,39 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 /**
  * ARI Named Agent Coordinator
  *
- * Six named agents with distinct model routing, SOUL files, and context planes:
- *   ARI   🧠  claude-opus-4-6    APEX   CFO/Orchestrator
- *   NOVA  🎬  claude-sonnet-4-6  APEX   P1 Content Creator
- *   CHASE 🎯  claude-sonnet-4-6  APEX   P2 Lead Connector
- *   PULSE 🔮  claude-haiku-4-5   APEX   Market Analyst
- *   DEX   🗂️  claude-haiku-4-5   APEX   Research Scout
- *   RUNE  🔧  claude-sonnet-4-6  CODEX  Engineering Builder
+ * ZOE plane (full business context — SOUL files + workspace + goals):
+ *   ARI   🧠  claude-opus-4-6    CFO / Meta-Orchestrator
+ *   NOVA  🎬  claude-sonnet-4-6  P1 Content Creator (PayThePryce)
+ *   CHASE 🎯  claude-sonnet-4-6  P2 Lead Connector (Pryceless Solutions)
+ *   PULSE 🔮  claude-haiku-4-5   Market Analyst
+ *   DEX   🗂️  claude-haiku-4-5   Research Scout
  *
- * ValueScorer routes to the highest-quality model appropriate for each task.
- * No hard budget caps — best model wins. Cost is tracked, not capped.
+ * CODEX plane (engineering only — task spec + AGENTS.md, NO SOUL files, NO business context):
+ *   RUNE  🔧  claude-sonnet-4-6  Engineering Builder
+ *
+ * Model routing is handled exclusively by ari-ai (ValueScorer + AGENT_PROFILES).
+ * This module owns: registry, capability cards, plane enforcement.
  */
 
+// Context plane for each agent:
+//   "zoe"   = full business context (ZOE plane): ARI, NOVA, CHASE, PULSE, DEX
+//   "codex" = engineering context only (CODEX plane): RUNE only
+//   Note: "codex" plane name ≠ "OpenAI Codex" model. The plane isolates context, not model choice.
 type AgentProfile = {
   name: string;
   emoji: string;
   role: string;
-  model: string;
-  provider: string;
-  plane: "apex" | "codex";
+  plane: "zoe" | "codex";
 };
 
 // Named agent registry — the six members of Pryce's empire
 export const NAMED_AGENTS: Record<string, AgentProfile> = {
-  ARI: {
-    name: "ARI",
-    emoji: "🧠",
-    role: "CFO / Meta-Orchestrator",
-    model: "anthropic/claude-opus-4-6",
-    provider: "openrouter",
-    plane: "apex",
-  },
-  NOVA: {
-    name: "NOVA",
-    emoji: "🎬",
-    role: "P1 Content Creator",
-    model: "anthropic/claude-sonnet-4-6",
-    provider: "openrouter",
-    plane: "apex",
-  },
-  CHASE: {
-    name: "CHASE",
-    emoji: "🎯",
-    role: "P2 Lead Connector",
-    model: "anthropic/claude-sonnet-4-6",
-    provider: "openrouter",
-    plane: "apex",
-  },
-  PULSE: {
-    name: "PULSE",
-    emoji: "🔮",
-    role: "Market Analyst",
-    model: "anthropic/claude-haiku-4-5",
-    provider: "openrouter",
-    plane: "apex",
-  },
-  DEX: {
-    name: "DEX",
-    emoji: "🗂️",
-    role: "Research Scout",
-    model: "anthropic/claude-haiku-4-5",
-    provider: "openrouter",
-    plane: "apex",
-  },
-  RUNE: {
-    name: "RUNE",
-    emoji: "🔧",
-    role: "Engineering Builder",
-    model: "anthropic/claude-sonnet-4-6",
-    provider: "openrouter",
-    plane: "codex",
-  },
+  ARI: { name: "ARI", emoji: "🧠", role: "CFO / Meta-Orchestrator", plane: "zoe" },
+  NOVA: { name: "NOVA", emoji: "🎬", role: "P1 Content Creator", plane: "zoe" },
+  CHASE: { name: "CHASE", emoji: "🎯", role: "P2 Lead Connector", plane: "zoe" },
+  PULSE: { name: "PULSE", emoji: "🔮", role: "Market Analyst", plane: "zoe" },
+  DEX: { name: "DEX", emoji: "🗂️", role: "Research Scout", plane: "zoe" },
+  RUNE: { name: "RUNE", emoji: "🔧", role: "Engineering Builder", plane: "codex" },
 };
 
 /**
