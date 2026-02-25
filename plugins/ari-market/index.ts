@@ -1,41 +1,122 @@
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import {
+  evaluateAlerts,
+  buildCommunitySnapshot,
+  formatPulseSnapshot,
+  shouldSendAlert,
+  ASSET_THRESHOLDS,
+} from "./src/market-monitor.js";
+import type { PricePoint, SocialSignal, MarketSnapshot } from "./src/market-monitor.js";
 
 /**
- * ARI Market Plugin — Real-time crypto/stock/Pokemon monitoring.
+ * ARI Market Plugin — Real-time multi-asset monitoring (PULSE 🔮).
  *
- * Phase 2 stub: registers plugin identity.
- * Phase 3: full market monitor + anomaly detection + Pokemon collection intelligence.
+ * Handles scheduler events:
+ *   pre-fetch-market     05:00 — Prefetch all market data
+ *   portfolio-snapshot   06:45 — Snapshot for morning briefing
+ *   market-midday        12:00 — Midday check
+ *   market-close         16:15 weekdays — EOD summary
+ *   pokemon-price-scan   10:00 — TCG anomaly detection
  *
- * Coverage:
- * - Crypto: BTC(8%), ETH(8%), SOL(10%) daily thresholds; flash crash >15% = P0
- * - Stock: AAPL 3%/8%, ETFs 2%/5%; Z-score 7-day rolling window
- * - Pokemon TCG: Z-score 30-day window, threshold |z|>2.5; EU/US divergence leading indicator
- * - Pokemon Sealed: MSRP ratio alerts; reprint risk detection
+ * Data flows:
+ *   External APIs → price data → evaluateAlerts() → shouldSendAlert() → Discord
+ *   Social signals → buildCommunitySnapshot() → reliability gate → #market-alerts
  *
- * Tools to register (Phase 3):
- * - ari_market_snapshot       — Current prices + P&L
- * - ari_portfolio_overview    — Portfolio breakdown
- * - ari_market_alerts         — Active P0/P1 alerts
- * - ari_pokemon_collection    — Collection value + top movers
- * - ari_pokemon_anomalies     — Active Z-score anomalies
- * - ari_pokemon_rotation      — Rotation calendar (investor framing)
- * - ari_pokemon_import        — CSV collection import
- * - ari_free_audit            — Pryceless Solutions lead audit tool
- *
- * Source: src/autonomous/market-monitor.ts, src/plugins/pokemon-tcg/
+ * Flash crashes (crypto >15% OR stocks >5%) emit P0 regardless of quiet hours.
  */
+
+const MARKET_TASK_IDS = new Set([
+  "pre-fetch-market",
+  "portfolio-snapshot",
+  "market-midday",
+  "market-close",
+  "pokemon-price-scan",
+]);
+
 const plugin = {
-  id: 'ari-market',
-  name: 'ARI Market',
-  description: 'Crypto/stock/Pokemon monitoring with Z-score anomaly detection',
+  id: "ari-market",
+  name: "ARI Market",
+  description: "Crypto/stock/Pokemon monitoring with Z-score anomaly detection",
   configSchema: emptyPluginConfigSchema(),
-  register(_api: OpenClawPluginApi): void {
-    // Phase 3: api.registerService({ id: 'market-monitor', start: initMarketMonitor })
-    // Phase 3: register market + pokemon tools
-    // Phase 3: wire cron: market-snapshot every 30min (08:00-22:00 ET)
-    // Phase 3: wire cron: pokemon-anomaly-detection daily 08:05 ET
+  register(api: OpenClawPluginApi): void {
+    // Handle market monitoring tasks from ari-scheduler
+    api.on("ari:scheduler:task", (event) => {
+      const ctx = event as Record<string, unknown>;
+      const taskId = typeof ctx.taskId === "string" ? ctx.taskId : "";
+      if (!MARKET_TASK_IDS.has(taskId)) {
+        return;
+      }
+
+      // Price data and social signals are passed via task payload or shared state
+      const prices = (ctx.prices ?? []) as PricePoint[];
+      const signals = (ctx.signals ?? []) as SocialSignal[];
+
+      const alerts = evaluateAlerts(prices);
+      const community = buildCommunitySnapshot(signals);
+
+      const snapshot: MarketSnapshot = {
+        prices,
+        alerts,
+        zScores: [], // Populated by anomaly detection (pokemon-price-scan task)
+        community,
+        snapshotAt: Date.now(),
+      };
+
+      // Emit snapshot for briefing integration
+      api.emit?.("ari:market:snapshot", {
+        snapshot,
+        taskId,
+        channel: ctx.channel ?? "market-alerts",
+      });
+
+      // Send alerts that pass quiet hours gate
+      const sendableAlerts = alerts.filter((a) => shouldSendAlert(a));
+      for (const alert of sendableAlerts) {
+        api.emit?.("ari:market:alert", {
+          alert,
+          channel: alert.isFlashCrash ? "system-status" : "market-alerts",
+        });
+      }
+
+      // Format and post full snapshot for portfolio/midday/close tasks
+      if (["portfolio-snapshot", "market-midday", "market-close"].includes(taskId)) {
+        const formatted = formatPulseSnapshot(snapshot);
+        api.emit?.("ari:market:formatted-snapshot", {
+          content: formatted,
+          channel: "market-alerts",
+          taskId,
+        });
+      }
+    });
+
+    // Handle direct price ingestion events (from external API pollers)
+    api.on("ari:market:price-update", (event) => {
+      const ctx = event as Record<string, unknown>;
+      const prices = (ctx.prices ?? []) as PricePoint[];
+      const alerts = evaluateAlerts(prices).filter((a) => shouldSendAlert(a));
+
+      // P0 flash crashes go to #system-status immediately
+      const p0 = alerts.filter((a) => a.severity === "P0");
+      for (const alert of p0) {
+        api.emit?.("ari:market:alert", { alert, channel: "system-status" });
+        // Canonical flash-crash event (Section 10 — consumed by ari-autonomous + governance)
+        api.emit?.("market:flash-crash", {
+          asset: alert.symbol,
+          pctChange: alert.changePct,
+          direction: alert.changePct > 0 ? "up" : "down",
+        });
+      }
+    });
   },
 };
 
+export { evaluateAlerts, buildCommunitySnapshot, formatPulseSnapshot, ASSET_THRESHOLDS };
+export type {
+  PricePoint,
+  SocialSignal,
+  MarketSnapshot,
+  MarketAlert,
+  MacroPoint,
+} from "./src/market-monitor.js";
 export default plugin;

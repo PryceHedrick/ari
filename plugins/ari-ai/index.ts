@@ -1,33 +1,45 @@
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { emptyPluginConfigSchema } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { routeToModel, computeValueScore, getCacheConfig } from "./src/value-scorer.js";
 
 /**
- * ARI AI Plugin — RL-based model routing via OpenRouter.
+ * ARI AI Plugin — ValueScorer model routing via OpenRouter
  *
- * Phase 2 stub: registers plugin identity.
- * Phase 3: ValueScorer Q-learning + OpenRouter endpoint + circuit breaker.
+ * Routes every LLM call to the highest-quality model appropriate for the task:
+ *   - Named agents → designated model (APEX/CODEX plane aware)
+ *   - Engineering → RUNE_PRIMARY_MODEL (Sprint 0 winner: Codex 5.3 or claude-sonnet-4-6)
+ *   - Web research → Perplexity tier-aware (sonar-deep / sonar-reasoning-pro / sonar-pro / sonar)
+ *   - Long context >100K → Gemini 2.5 Flash overflow
+ *   - Default → ValueScore: score ≥85 → opus | 60-84 → sonnet | <60 → haiku
  *
- * ValueScorer routing (PRESERVED from ARI v10):
- * rawScore = complexity*0.35 + stakes*0.25 + qualityPriority*0.2 + budget*0.1 + history*0.1
- * - Score >= 85  → anthropic/claude-opus-4.6
- * - Score 60-85  → anthropic/claude-sonnet-4.5
- * - Score < 50   → anthropic/claude-haiku-4.5
- * - Heartbeat    → anthropic/claude-haiku-3
- * - Context >600K chars → anthropic/claude-opus-4.6 (1M window)
- *
- * Budget guardrails: $1/day soft → $2/day hard → $5/day emergency (P0 only)
- * Source: src/ai/ (value-scorer.ts, model-registry.ts, circuit-breaker.ts)
+ * ValueScore formula: (complexity × 0.40) + (stakes × 0.30) + (quality × 0.20) + (history × 0.10)
+ * No hard budget caps — best model for every task. Spend tracked for visibility.
  */
 const plugin = {
-  id: 'ari-ai',
-  name: 'ARI AI',
-  description: 'ValueScorer RL model routing + OpenRouter gateway + budget guardrails',
+  id: "ari-ai",
+  name: "ARI AI",
+  description: "ValueScorer model routing — best model for every task, no caps",
   configSchema: emptyPluginConfigSchema(),
-  register(_api: OpenClawPluginApi): void {
-    // Phase 3: Override OpenClaw model selection with ValueScorer
-    // Phase 3: api.registerService({ id: 'model-router', start: initValueScorer })
-    // Phase 3: api.registerService({ id: 'budget-tracker', start: initBudgetTracker })
+  register(api: OpenClawPluginApi): void {
+    api.on("before_model_resolve", (event) => {
+      const ctx = event as Record<string, unknown>;
+      const route = routeToModel({
+        agentName: typeof ctx.agentName === "string" ? ctx.agentName : undefined,
+        taskType: typeof ctx.taskType === "string" ? ctx.taskType : undefined,
+        prompt: typeof ctx.prompt === "string" ? ctx.prompt : "",
+        contextTokens: typeof ctx.contextTokens === "number" ? ctx.contextTokens : undefined,
+        researchDepth: ctx.researchDepth as "deep" | "reasoning" | "pro" | "basic" | undefined,
+        complexity: typeof ctx.complexity === "number" ? ctx.complexity : undefined,
+        stakes: typeof ctx.stakes === "number" ? ctx.stakes : undefined,
+      });
+      return {
+        modelOverride: route.model,
+        providerOverride: route.provider,
+      };
+    });
   },
 };
 
+export { routeToModel, computeValueScore, getCacheConfig };
+export type { CacheConfig } from "./src/value-scorer.js";
 export default plugin;
