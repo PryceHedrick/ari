@@ -24,16 +24,6 @@ type AgentProfile = {
   plane: "apex" | "codex";
 };
 
-type ModelResolveEvent = {
-  prompt: string;
-  agentName?: string;
-};
-
-type ModelResolveResult = {
-  modelOverride: string;
-  providerOverride: string;
-};
-
 // Named agent registry — the six members of Pryce's empire
 export const NAMED_AGENTS: Record<string, AgentProfile> = {
   ARI: {
@@ -85,86 +75,6 @@ export const NAMED_AGENTS: Record<string, AgentProfile> = {
     plane: "codex",
   },
 };
-
-// ValueScorer — route to best model based on task complexity signals
-// Score ≥85 → opus-4-6 | Score 60-84 → sonnet-4-6 | Score <60 → haiku-4-5
-const OPUS_PATTERNS = [
-  /governance/i,
-  /strategy/i,
-  /architecture/i,
-  /security/i,
-  /orchestrat/i,
-  /long.?form/i,
-  /deep.?analysis/i,
-  /roadmap/i,
-];
-
-const SONNET_PATTERNS = [
-  /script/i,
-  /content/i,
-  /lead/i,
-  /qualif/i,
-  /demo/i,
-  /outreach/i,
-  /thumbnail/i,
-  /build/i,
-  /implement/i,
-  /code/i,
-];
-
-const HAIKU_PATTERNS = [
-  /monitor/i,
-  /heartbeat/i,
-  /health.?check/i,
-  /scan/i,
-  /status/i,
-  /price.?check/i,
-  /daily.?brief/i,
-];
-
-function valueScore(prompt: string): "opus" | "sonnet" | "haiku" {
-  if (OPUS_PATTERNS.some((p) => p.test(prompt))) {
-    return "opus";
-  }
-  if (SONNET_PATTERNS.some((p) => p.test(prompt))) {
-    return "sonnet";
-  }
-  if (HAIKU_PATTERNS.some((p) => p.test(prompt))) {
-    return "haiku";
-  }
-  return "sonnet"; // default: sonnet for unclassified tasks
-}
-
-const MODEL_MAP = {
-  opus: "anthropic/claude-opus-4-6",
-  sonnet: "anthropic/claude-sonnet-4-6",
-  haiku: "anthropic/claude-haiku-4-5",
-};
-
-/**
- * Resolve model for a given agent and prompt.
- * Named agents always use their designated model.
- * Unnamed requests use ValueScorer.
- */
-export function resolveAgentModel(event: ModelResolveEvent): ModelResolveResult {
-  const name = event.agentName?.toUpperCase();
-
-  // Named agent: use profile model
-  if (name && name in NAMED_AGENTS) {
-    const profile = NAMED_AGENTS[name];
-    return {
-      modelOverride: profile.model,
-      providerOverride: profile.provider,
-    };
-  }
-
-  // Unnamed: ValueScorer
-  const tier = valueScore(event.prompt);
-  return {
-    modelOverride: MODEL_MAP[tier],
-    providerOverride: "openrouter",
-  };
-}
 
 /**
  * Validate APEX/CODEX plane context enforcement.

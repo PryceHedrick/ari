@@ -7,6 +7,7 @@ import {
   formatPulseSnapshot,
   shouldSendAlert,
   ASSET_THRESHOLDS,
+  SOURCE_RELIABILITY,
 } from "./src/market-monitor.js";
 import type { PricePoint, SocialSignal, MarketSnapshot } from "./src/market-monitor.js";
 
@@ -25,6 +26,11 @@ import type { PricePoint, SocialSignal, MarketSnapshot } from "./src/market-moni
  *   Social signals → buildCommunitySnapshot() → reliability gate → #market-alerts
  *
  * Flash crashes (crypto >15% OR stocks >5%) emit P0 regardless of quiet hours.
+ *
+ * Canonical social EventBus events (Section 10 / Section 26):
+ *   social:x-signal        → reliability gate → social:signal-ingested
+ *   social:reddit-signal   → reliability gate → social:signal-ingested
+ *   market:flash-crash     → emitted on P0 price events
  */
 
 const MARKET_TASK_IDS = new Set([
@@ -95,6 +101,57 @@ const plugin = {
           taskId,
         });
       }
+    });
+
+    // Handle social signal ingestion — X/Twitter signals (Section 26)
+    // Reliability gate: weight ≥ 0.55 required to emit social:signal-ingested
+    api.on("social:x-signal", (event) => {
+      const ctx = event as Record<string, unknown>;
+      const reliabilityWeight =
+        typeof ctx.reliabilityWeight === "number"
+          ? ctx.reliabilityWeight
+          : (SOURCE_RELIABILITY["x_tracked_account"] ?? 0.7);
+
+      if (reliabilityWeight < 0.55) {
+        return; // Below reliability gate — discard
+      }
+
+      api.emit?.("social:signal-ingested", {
+        envelope: {
+          source: "x",
+          account: ctx.account,
+          content: ctx.content,
+          sentiment: ctx.sentiment ?? "neutral",
+          reliabilityWeight,
+          timestamp: Date.now(),
+        },
+      });
+    });
+
+    // Handle social signal ingestion — Reddit signals (Section 26)
+    api.on("social:reddit-signal", (event) => {
+      const ctx = event as Record<string, unknown>;
+      const reliabilityWeight =
+        typeof ctx.reliabilityWeight === "number"
+          ? ctx.reliabilityWeight
+          : (SOURCE_RELIABILITY["reddit_post"] ?? 0.65);
+
+      if (reliabilityWeight < 0.55) {
+        return; // Below reliability gate — discard
+      }
+
+      api.emit?.("social:signal-ingested", {
+        envelope: {
+          source: "reddit",
+          subreddit: ctx.subreddit,
+          postId: ctx.postId,
+          content: ctx.content,
+          upvotes: ctx.upvotes,
+          sentiment: ctx.sentiment ?? "neutral",
+          reliabilityWeight,
+          timestamp: Date.now(),
+        },
+      });
     });
 
     // Handle direct price ingestion events (from external API pollers)
