@@ -32,7 +32,7 @@ Six named agents. Two context planes. One orchestrator.
 | Agent        | Role                                                 | Model             | Plane |
 | ------------ | ---------------------------------------------------- | ----------------- | ----- |
 | **ARI 🧠**   | CFO / Orchestrator — plans, prioritizes, coordinates | claude-opus-4-6   | APEX  |
-| **NOVA 🎬**  | P1 Content Creator — PayThePryce YouTube pipeline    | claude-sonnet-4-6 | APEX  |
+| **NOVA 🎬**  | P1 Content Creator — YouTube content pipeline        | claude-sonnet-4-6 | APEX  |
 | **CHASE 🎯** | P2 Lead Connector — Pryceless Solutions B2B leads    | claude-sonnet-4-6 | APEX  |
 | **PULSE 📡** | Market Analyst — crypto, stocks, Pokemon TCG         | claude-haiku-4-5  | APEX  |
 | **DEX 🗂️**   | Research Scout — AI papers, model updates, digests   | claude-haiku-4-5  | APEX  |
@@ -66,9 +66,9 @@ Six named agents. Two context planes. One orchestrator.
 
 ## Business Pipelines
 
-### P1 — PayThePryce (NOVA 🎬)
+### P1 — Content Pipeline (NOVA 🎬)
 
-Autonomous YouTube content pipeline for the Pokemon TCG market.
+Autonomous YouTube content pipeline for the trading card market.
 
 ```
 PULSE detects price spike (≥15%/7d) → writes market signal
@@ -79,17 +79,17 @@ Rights gate (every asset needs commercial_ok clearance)
   ↓
 Thumbnails: Ideogram V3 (Fal.ai) + DALL-E 3 → 4 variants → #thumbnail-lab
   ↓
-Pryce selects A/B/C/D → video posted to #video-queue (48h TTL)
+Owner selects A/B/C/D → video posted to #video-queue (48h TTL)
   ↓
-Pryce clicks ✅ → NOVA uploads to YouTube
+Owner clicks ✅ → NOVA uploads to YouTube
 ```
 
-### P2 — Pryceless Solutions (CHASE 🎯)
+### P2 — Lead Pipeline (CHASE 🎯)
 
-Indiana B2B lead discovery and outreach pipeline.
+B2B lead discovery and outreach pipeline.
 
 ```
-CHASE discovers Indiana businesses (SerpAPI + Google Business Profile)
+CHASE discovers local businesses (SerpAPI + Google Business Profile)
   ↓
 5-criteria audit: SEO + Contact + Presence + CTA + Business Signals
   Minimum 40/100 to proceed — below 40 → cold bucket silently
@@ -98,7 +98,7 @@ CHASE discovers Indiana businesses (SerpAPI + Google Business Profile)
   ↓
 Prompt Forge 4-pass lock: Evidence → Offer → Critic → Lock (SHA-256, 7-day TTL)
   ↓
-Demo site built → #outreach-queue for Pryce approval (OPERATOR-ONLY, 72h TTL)
+Demo site built → #outreach-queue for owner approval (OPERATOR-ONLY, 72h TTL)
 ```
 
 CHASE runs Monday, Wednesday, Friday automatically. Never sends without a slash command.
@@ -192,8 +192,8 @@ See `.env.example` and `docs/ARI_ENV_COMPLETE.md` for the full list.
 ```
 ARI CORE         #ari-main · #ari-deep
 MARKET           #market-alerts · #pokemon-market · #research-digest
-PAYTHEPRICE      #paytheprice-main · #video-queue · #thumbnail-lab · #published
-PRYCELESS        #leads · #demo-factory · #outreach-queue · #wins
+CONTENT          #content-main · #video-queue · #thumbnail-lab · #published
+LEADS            #leads · #demo-factory · #outreach-queue · #wins
 SYSTEM OPS       #system-status · #ops-dashboard
 ADMIN            #api-logs
 ```
