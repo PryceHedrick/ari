@@ -39,7 +39,7 @@ export const NAMED_AGENTS: Record<string, AgentProfile> = {
 };
 
 /**
- * Validate APEX/CODEX plane context enforcement.
+ * Validate ZOE/CODEX plane context enforcement.
  * Called at agent spawn time — throws on violation.
  */
 export function validateContextBundlePlane(
@@ -61,19 +61,35 @@ export function validateContextBundlePlane(
   );
 
   // SOUL files are prohibited for CODEX plane
+  const SOUL_FILES = new Set([
+    "SOUL.md",
+    "USER.md",
+    "HEARTBEAT.md",
+    "GOALS.md",
+    "MEMORY.md",
+    "RECOVERY.md",
+  ]);
   const hasSoulFiles = contextFiles.some(
     (f) =>
       f === "SOUL.md" ||
       f === "USER.md" ||
       f === "HEARTBEAT.md" ||
       f === "GOALS.md" ||
-      f === "MEMORY.md",
+      f === "MEMORY.md" ||
+      f === "RECOVERY.md",
   );
 
   if (hasSoulFiles || prohibited.length > 0) {
-    const violations = contextFiles
-      .filter((f) => ["SOUL.md", "USER.md", "HEARTBEAT.md", "GOALS.md", "MEMORY.md"].includes(f))
-      .join(", ");
+    const violations = contextFiles.filter((f) => SOUL_FILES.has(f)).join(", ");
+    // Emit security audit signal before throwing — interceptable by OpenClaw error boundary
+    console.error(
+      JSON.stringify({
+        event: "security:codex-violation-attempt",
+        agent: name,
+        prohibitedFiles: violations,
+        timestamp: new Date().toISOString(),
+      }),
+    );
     throw new Error(
       `[ARI-GOVERNANCE] CODEX plane violation for ${name}: PROHIBITED files detected: ${violations}. ` +
         "RUNE/CODEX agents NEVER receive SOUL files, workspace files, or business context.",

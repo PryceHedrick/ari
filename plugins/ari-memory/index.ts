@@ -95,24 +95,39 @@ const plugin = {
       id: "ari_workspace_load",
       name: "Load Workspace Context",
       description:
-        "Load workspace files (SOUL, USER, HEARTBEAT, GOALS, AGENTS, MEMORY) into context",
+        "Load workspace files (SOUL, USER, HEARTBEAT, GOALS, AGENTS, MEMORY, RECOVERY) into context. ZOE plane = all 7 files. CODEX plane (RUNE) = AGENTS.md only.",
       inputSchema: {
         type: "object" as const,
         properties: {
           agentName: {
             type: "string",
-            description: "Agent name for SOUL file loading (APEX only)",
+            description: "Agent name for SOUL file loading (ZOE plane only)",
           },
           plane: {
             type: "string",
-            enum: ["apex", "codex"],
-            description: "Context isolation plane",
+            enum: ["zoe", "codex"],
+            description:
+              "Context isolation plane: 'zoe' = full business context, 'codex' = engineering only",
           },
         },
       },
       handler: async (input: Record<string, unknown>) => {
-        const { agentName, plane } = input as { agentName?: string; plane?: "apex" | "codex" };
-        return loadWorkspaceContext(agentName, plane ?? "apex");
+        const { agentName, plane } = input as { agentName?: string; plane?: "zoe" | "codex" };
+
+        // CODEX enforcement: RUNE always gets codex plane regardless of request
+        const CODEX_AGENTS = ["rune", "RUNE"];
+        const isCodexAgent = agentName !== undefined && CODEX_AGENTS.includes(agentName);
+
+        // Reject explicit ZOE request from CODEX agent — security gate
+        if (isCodexAgent && plane === "zoe") {
+          throw new Error(
+            `[ARI-GOVERNANCE] CODEX plane violation: ${agentName} requested ZOE context. ` +
+              "RUNE/CODEX agents NEVER receive ZOE context — request rejected.",
+          );
+        }
+
+        const effectivePlane: "zoe" | "codex" = isCodexAgent ? "codex" : (plane ?? "zoe");
+        return loadWorkspaceContext(agentName, effectivePlane);
       },
     });
 

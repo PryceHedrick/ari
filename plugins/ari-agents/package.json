@@ -2,7 +2,7 @@
   "name": "@ari/agents",
   "version": "1.0.0",
   "private": true,
-  "description": "ARI named agent coordinator — NOVA/CHASE/PULSE/DEX/RUNE with APEX/CODEX plane enforcement",
+  "description": "ARI named agent coordinator — ZOE plane (ARI/NOVA/CHASE/PULSE/DEX) + CODEX plane (RUNE, engineering-only context)",
   "type": "module",
   "devDependencies": {
     "openclaw": "workspace:*"

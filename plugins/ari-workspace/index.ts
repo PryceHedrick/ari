@@ -3,24 +3,25 @@ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { registerWorkspaceHooks } from "./src/workspace-loader.js";
 
 /**
- * ARI Workspace Plugin — Loads workspace context files into every agent.
+ * ARI Workspace Plugin — ZOE/CODEX plane context injection.
  *
- * Phase 2 stub: registers plugin identity.
- * Phase 3: inject 5 workspace files into agent context on bootstrap.
+ * ZOE plane (ARI, NOVA, CHASE, PULSE, DEX) receives 7 workspace files:
+ *   ~/.ari/workspace/
+ *   ├── SOUL.md       — ARI identity, voice, values, security invariants
+ *   ├── USER.md       — Pryce's full context (schedule, businesses, investments)
+ *   ├── HEARTBEAT.md  — Proactive monitoring checklist + P-level routing
+ *   ├── GOALS.md      — 30/90/365-day goals + active experiments
+ *   ├── AGENTS.md     — Named agent registry, coordination rules
+ *   ├── MEMORY.md     — Cross-session learnings (auto-updated by ari-memory)
+ *   └── RECOVERY.md   — Disaster recovery and self-healing protocol
  *
- * Workspace files (at ~/.openclaw/workspace/ — OUTSIDE the repo):
- * - SOUL.md       — ARI identity, voice, values, security invariants
- * - USER.md       — Pryce's full context (schedule, businesses, investments)
- * - HEARTBEAT.md  — Proactive monitoring checklist + P-level routing
- * - AGENTS.md     — Multi-agent routing rules
- * - RECOVERY.md   — Disaster recovery protocol
+ * Plus: ~/.ari/workspace/agents/{agentName}/SOUL.md (injected first for named agents)
  *
- * Templates in: .openclaw-workspace-templates/ (copy to ~/.openclaw/workspace/)
+ * CODEX plane (RUNE — engineering only):
+ *   Receives AGENTS.md ONLY. All business context is prohibited.
+ *   "CODEX plane" = context isolation. Not named after any AI model.
  *
- * Loading order: SOUL → USER → HEARTBEAT → AGENTS → RECOVERY
- * Each file injected as system context before agent processes any message.
- *
- * Source: src/autonomous/workspace-loader.ts (adapted from ARI v10)
+ * Loading order: SOUL (agent) → SOUL → USER → HEARTBEAT → GOALS → AGENTS → MEMORY → RECOVERY
  */
 const plugin = {
   id: "ari-workspace",
