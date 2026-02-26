@@ -1,7 +1,7 @@
 /**
- * ARI Scheduler — 19 Cron Tasks (All Eastern Time, ADR-012)
+ * ARI Scheduler — 21 Cron Tasks (All Eastern Time, ADR-012)
  *
- * The 19 tasks replace the legacy 47 tasks from ARI v10 through consolidation:
+ * The 21 tasks replace the legacy 47 tasks from ARI v10 through consolidation:
  * - SYSTEM tier: health, backup, git-sync (background, no Discord)
  * - PULSE tier: market scans and pre-fetch (background data collection)
  * - ARI tier: intelligence delivery to Discord (visible to Pryce)
@@ -19,7 +19,7 @@ export type CronTask = {
 };
 
 /**
- * All 19 scheduled tasks — Eastern Time (America/New_York)
+ * All 21 scheduled tasks — Eastern Time (America/New_York)
  *
  * ADR-012: ALL cron schedules use Eastern Time
  */
@@ -198,6 +198,24 @@ export const CRON_TASKS: CronTask[] = [
     channel: "ari-main",
     gate: "auto",
     priority: 2,
+  },
+
+  // === DEX OBSIDIAN VAULT TASKS (ARI_OBSIDIAN_ENABLED guard in handler) ===
+  {
+    id: "morning-vault-digest",
+    cron: "0 5 * * *", // daily 05:00 ET (before 06:30 briefing pre-fetch)
+    description: "DEX reads yesterday's Obsidian daily note → OBSIDIAN-DAILY-DIGEST.md",
+    agent: "DEX",
+    gate: "auto",
+    priority: 3,
+  },
+  {
+    id: "weekly-vault-scan",
+    cron: "0 9 * * 1", // Monday 09:00 ET
+    description: "DEX 30-day vault scan → OBSIDIAN-IDEAS-30DAY.md + OBSIDIAN-GAPS.md",
+    agent: "DEX",
+    gate: "auto",
+    priority: 3,
   },
 ];
 

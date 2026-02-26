@@ -58,6 +58,13 @@ export type CommunitySentiment = {
   signals?: Array<{ source: string; summary: string }>; // Max 2 (Miller's Law)
 };
 
+export type VaultSnapshot = {
+  themes: string[]; // Yesterday's hashtags + wikilinks (Max 3)
+  questions: string[]; // Open questions from yesterday (Max 2)
+  relatedNotes: string[]; // Most relevant linked notes (Max 3)
+  date: string; // YYYY-MM-DD of daily note
+};
+
 export type BriefingData = {
   type: BriefingType;
   weather?: WeatherData;
@@ -65,6 +72,7 @@ export type BriefingData = {
   news?: NewsItem[]; // Max 3 (Miller's Law)
   pokemon?: PokemonSignal[]; // Max 3 movers
   community?: CommunitySentiment; // Section 7 community sentiment (when reliability ≥ 0.55)
+  vault?: VaultSnapshot; // Obsidian daily digest (when ARI_OBSIDIAN_ENABLED=true)
   p1Status?: string; // NOVA pipeline status
   p2Status?: string; // CHASE pipeline status
   buildSuggestions?: string[]; // Max 3 suggestions
@@ -172,6 +180,29 @@ function buildMorningSections(data: BriefingData): BriefingSection[] {
       lines.push(`${s.source}: ${s.summary}`);
     }
     sections.push({ emoji: "🌐", label: "COMMUNITY", content: lines.join("\n") });
+  }
+
+  // Obsidian vault snapshot (only when vault data provided, i.e. ARI_OBSIDIAN_ENABLED=true)
+  if (data.vault) {
+    const v = data.vault;
+    const lines: string[] = [];
+    if (v.themes.length > 0) {
+      lines.push(
+        `Themes: ${v.themes
+          .slice(0, 3)
+          .map((t) => `[[${t}]]`)
+          .join(", ")}`,
+      );
+    }
+    if (v.questions.length > 0) {
+      lines.push(`Open: "${v.questions[0]}"`);
+    }
+    if (v.relatedNotes.length > 0) {
+      lines.push(`Linked: ${v.relatedNotes.slice(0, 2).join(", ")}`);
+    }
+    if (lines.length > 0) {
+      sections.push({ emoji: "📔", label: "VAULT SNAPSHOT", content: lines.join("\n") });
+    }
   }
 
   // News (≤3 headlines, Miller's Law)
