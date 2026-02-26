@@ -12,7 +12,7 @@ import { registerAgentCoordinator } from "./src/coordinator.js";
  *     ARI   🧠  claude-opus-4-6    CFO/Orchestrator
  *     NOVA  🎬  claude-sonnet-4-6  P1 Content Creator (PayThePryce)
  *     CHASE 🎯  claude-sonnet-4-6  P2 Lead Connector (Pryceless Solutions)
- *     PULSE 🔮  claude-haiku-4-5   Market Analyst
+ *     PULSE 📡  claude-haiku-4-5   Market Analyst
  *     DEX   🗂️  claude-haiku-4-5   Research Scout
  *
  *   CODEX plane  (engineering only — NO business context, NO SOUL files):

@@ -4,9 +4,9 @@ import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 /**
- * ARI Workspace Loader — ZOE/CODEX Plane Enforcement
+ * ARI Workspace Loader — APEX/CODEX Plane Enforcement
  *
- * ZOE Plane (ARI, NOVA, CHASE, PULSE, DEX — full business context):
+ * APEX Plane (ARI, NOVA, CHASE, PULSE, DEX — full business context):
  *   Receives: agent SOUL.md + full workspace files
  *             (SOUL / USER / HEARTBEAT / GOALS / AGENTS / MEMORY / RECOVERY)
  *
@@ -23,7 +23,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 const ARI_WORKSPACE_DIR = path.join(os.homedir(), ".ari", "workspace");
 const AGENTS_DIR = path.join(ARI_WORKSPACE_DIR, "agents");
 
-// ZOE plane: full business context (all 7 workspace files)
+// APEX plane: full business context (all 7 workspace files)
 // IMPORTANT: Stable files must precede HEARTBEAT.md (dynamic timestamps) for prompt cache hits.
 // Cache order: stable → semi-stable → dynamic. HEARTBEAT.md MUST be last.
 const ZOE_WORKSPACE_FILES = [
@@ -42,7 +42,7 @@ const CODEX_WORKSPACE_FILES = ["AGENTS.md"];
 // CODEX plane agents — engineering only, never receive business context
 const CODEX_AGENTS = new Set(["rune", "RUNE"]);
 
-// Named ZOE agents with their own SOUL files
+// Named APEX agents with their own SOUL files
 const NAMED_ZOE_AGENTS = new Set([
   "ari",
   "ARI",
@@ -199,7 +199,7 @@ export function registerWorkspaceHooks(api: OpenClawPluginApi): void {
 
     const sections: string[] = [];
 
-    // ZOE plane: inject named agent's SOUL.md first (if available)
+    // APEX plane: inject named agent's SOUL.md first (if available)
     if (plane === "zoe" && agentName && NAMED_ZOE_AGENTS.has(agentName)) {
       const soulFile = loadAgentSoulFile(agentName);
       if (soulFile) {
@@ -217,7 +217,7 @@ export function registerWorkspaceHooks(api: OpenClawPluginApi): void {
       return undefined;
     }
 
-    const planeLabel = plane === "codex" ? "[ARI-CODEX-CONTEXT]" : "[ARI-ZOE-CONTEXT]";
+    const planeLabel = plane === "codex" ? "[ARI-CODEX-CONTEXT]" : "[ARI-APEX-CONTEXT]";
     return {
       prependContext: [planeLabel, sections.join("\n\n")].join("\n\n"),
     };

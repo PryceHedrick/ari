@@ -2,24 +2,35 @@
  * ARI ValueScorer — Intelligent model routing for all LLM calls
  *
  * Routing priority (highest to lowest):
- *   1. Named agent → use profile model always
- *   2. Engineering task → RUNE_PRIMARY_MODEL (Sprint 0 winner)
- *   3. Web research → Perplexity tier-aware routing
- *   4. Long context >100K → Gemini 2.5 Flash overflow
- *   5. ValueScore → opus/sonnet/haiku based on complexity+stakes+quality+history
+ *   1. CODEX plane → RUNE_PRIMARY_MODEL (engineering context)
+ *   2. Named agent → task-type-aware multi-tier routing
+ *      ARI:   always Opus 4.6 (orchestration)
+ *      NOVA:  outline/brief → Haiku | default → Sonnet | polish/final → Opus
+ *      CHASE: discovery/score → Haiku | default → Sonnet | deep/high-stakes → Opus
+ *      PULSE: market-news → Perplexity sonar-pro | sentiment → Sonnet | default → Gemini 2.5 Flash
+ *      DEX:   web/changelog → Perplexity sonar-pro | breakthrough → sonar-reasoning-pro
+ *             paper-analysis → Haiku+thinking | synthesis → Sonnet | long-doc → Gemini 2.5 Flash
+ *             default → Perplexity sonar-pro
+ *      RUNE:  RUNE_PRIMARY_MODEL (engineering)
+ *   3. Engineering task patterns → RUNE_PRIMARY_MODEL
+ *   4. Web research patterns → Perplexity tier-aware
+ *   5. Long context >100K → Gemini 2.5 Flash overflow
+ *   6. Image generation → DALL-E 3
+ *   7. Audio transcription → Whisper
+ *   8. Default → Claude ValueScore (complexity+stakes+quality+history)
  *
  * No hard budget caps. Best model for every task.
  * Spend tracked via OpenRouter GET /api/v1/key.
  *
- * Prompt caching (OpenRouter):
- *   Named agents: ttl=1h (stable SOUL+workspace context ≥4096 tokens = ~70% cost reduction)
- *   Other:        ttl=5min (default ephemeral)
- *   Threshold:    Opus 4.6 ≥4096 tokens | Sonnet/Haiku ≥1024 tokens
+ * Prompt caching (OpenRouter — Anthropic models only):
+ *   Named agents (Anthropic models): ttl=1h (~70% cost reduction on stable SOUL+workspace)
+ *   Other large prompts: ttl=5min (default ephemeral)
+ *   Threshold: Opus ≥4096 tokens | Sonnet/Haiku ≥1024 tokens
  */
 
 export type ModelTier = "opus" | "sonnet" | "haiku";
 export type ResearchDepth = "deep" | "reasoning" | "pro" | "basic";
-export type ContextPlane = "zoe" | "codex";
+export type ContextPlane = "apex" | "codex";
 
 export type TaskContext = {
   agentName?: string;
@@ -42,28 +53,29 @@ export type ModelRoute = {
   thinkingBudget?: number;
 };
 
-// Named agent profiles — always use designated model
-const AGENT_PROFILES: Record<string, { model: string; provider: "openrouter" }> = {
+// Named agent profiles — default model when no task-type override applies
+const AGENT_PROFILES: Record<string, { model: string; provider: ModelRoute["provider"] }> = {
   ARI: { model: "anthropic/claude-opus-4-6", provider: "openrouter" },
+  "ARI-DEEP": { model: "anthropic/claude-opus-4-6", provider: "openrouter" }, // ari-deep agent → always Opus
   NOVA: { model: "anthropic/claude-sonnet-4-6", provider: "openrouter" },
   CHASE: { model: "anthropic/claude-sonnet-4-6", provider: "openrouter" },
-  PULSE: { model: "anthropic/claude-haiku-4-5", provider: "openrouter" },
-  DEX: { model: "anthropic/claude-haiku-4-5", provider: "openrouter" },
+  PULSE: { model: "google/gemini-2.5-flash", provider: "openrouter" },
+  DEX: { model: "perplexity/sonar-pro", provider: "perplexity" },
   RUNE: {
     model: process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6",
     provider: "openrouter",
   },
 };
 
-// Perplexity tier-aware routing (via OpenRouter)
+// Perplexity tier-aware routing — real-time web search native to model
 const PERPLEXITY_MODELS: Record<ResearchDepth, string> = {
-  deep: "perplexity/sonar-deep-research", // DEX weekly digest, CHASE deep qualify
-  reasoning: "perplexity/sonar-reasoning-pro", // DEX breakthrough scanning
-  pro: "perplexity/sonar-pro", // PULSE news, CHASE quick research
-  basic: "perplexity/sonar", // High-volume routine daily scans
+  deep: "perplexity/sonar-deep-research", // DEX weekly digest — deepest synthesis
+  reasoning: "perplexity/sonar-reasoning-pro", // DEX breakthrough detection, CHASE deep qualify
+  pro: "perplexity/sonar-pro", // PULSE news, DEX web research, CHASE lead audit
+  basic: "perplexity/sonar", // High-volume routine scans
 };
 
-// Engineering task detection
+// Engineering task detection patterns
 const ENGINEERING_PATTERNS = [
   /build/i,
   /implement/i,
@@ -79,7 +91,7 @@ const ENGINEERING_PATTERNS = [
   /class/i,
 ];
 
-// Web research task detection
+// Web research detection patterns (for non-named-agent fallback)
 const RESEARCH_PATTERNS = [
   /search/i,
   /research/i,
@@ -91,7 +103,7 @@ const RESEARCH_PATTERNS = [
   /live.*data/i,
 ];
 
-// Long-context detection patterns (for Gemini overflow)
+// Long-context threshold for Gemini overflow (non-named-agent path)
 const LONG_CONTEXT_TOKEN_THRESHOLD = 100_000;
 
 /**
@@ -101,9 +113,8 @@ const LONG_CONTEXT_TOKEN_THRESHOLD = 100_000;
 export function computeValueScore(ctx: TaskContext): number {
   const complexity = ctx.complexity ?? estimateComplexity(ctx.prompt);
   const stakes = ctx.stakes ?? estimateStakes(ctx.prompt);
-  const quality = ctx.quality ?? 60; // default: quality matters
-  const history = ctx.history ?? 50; // default: moderate history
-
+  const quality = ctx.quality ?? 60;
+  const history = ctx.history ?? 50;
   return complexity * 0.4 + stakes * 0.3 + quality * 0.2 + history * 0.1;
 }
 
@@ -122,7 +133,7 @@ function estimateComplexity(prompt: string): number {
 }
 
 function estimateStakes(prompt: string): number {
-  const highStakePatterns = [
+  const highStake = [
     /governance/i,
     /security/i,
     /strategy/i,
@@ -130,12 +141,11 @@ function estimateStakes(prompt: string): number {
     /publish/i,
     /outreach/i,
   ];
-  const lowStakePatterns = [/heartbeat/i, /health.*check/i, /monitor/i, /status/i];
-
-  if (highStakePatterns.some((p) => p.test(prompt))) {
+  const lowStake = [/heartbeat/i, /health.*check/i, /monitor/i, /status/i];
+  if (highStake.some((p) => p.test(prompt))) {
     return 85;
   }
-  if (lowStakePatterns.some((p) => p.test(prompt))) {
+  if (lowStake.some((p) => p.test(prompt))) {
     return 20;
   }
   return 55;
@@ -168,73 +178,241 @@ function validateRuneModel(model: string): void {
 
 /**
  * Route a task to the best model.
- * Priority: CODEX plane → named agent → engineering → research → long-context → ValueScore
+ * Priority: CODEX → named agent (task-type-aware) → engineering → research → long-context → ValueScore
  */
 export function routeToModel(ctx: TaskContext): ModelRoute {
-  // 0. CODEX plane fast-path — engineering context always routes to RUNE_PRIMARY_MODEL
+  // 0. CODEX plane fast-path — always routes to RUNE_PRIMARY_MODEL
   if (ctx.plane === "codex") {
     const codexModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
     return {
       provider: "openrouter",
       model: codexModel,
-      reason: "CODEX plane fast-path → RUNE primary model (engineering context)",
+      reason: "CODEX plane → RUNE primary model (engineering)",
     };
   }
 
-  // 1. Named agent — always use profile model
+  // 1. Named agent — task-type-aware multi-tier routing
   if (ctx.agentName) {
     const name = ctx.agentName.toUpperCase();
     const profile = AGENT_PROFILES[name];
     if (profile) {
-      // CHASE escalates to Opus for deep lead qualification (plan Section 3.1)
-      // "CHASE 🎯 (+ Opus for deep qualify)" — high-stakes = P2 revenue on the line
-      if (
-        name === "CHASE" &&
-        (ctx.researchDepth === "deep" || (ctx.stakes !== undefined && ctx.stakes >= 85))
-      ) {
+      // ── ARI 🧠 ────────────────────────────────────────────────────────────────
+      // Always Opus. No task-type downgrades. Orchestration demands maximum capability.
+
+      // ── NOVA 🎬 ──────────────────────────────────────────────────────────────
+      if (name === "NOVA") {
+        // Fast draft tasks → Haiku (outlines, briefs, thumbnail prompts)
+        if (
+          ctx.taskType === "script-outline" ||
+          ctx.taskType === "brief" ||
+          ctx.taskType === "thumbnail-prompt" ||
+          ctx.taskType === "market-ingest"
+        ) {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-haiku-4-5",
+            reason: "NOVA draft/brief task → Haiku (fast, disposable output)",
+          };
+        }
+        // Quality gate → Opus (final script polish, confidence review)
+        if (
+          ctx.taskType === "script-polish" ||
+          ctx.taskType === "final-review" ||
+          ctx.taskType === "quality-review"
+        ) {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-opus-4-6",
+            reason: "NOVA final polish → Opus (quality-critical, Pryce-facing output)",
+          };
+        }
+        // Default NOVA → Sonnet (script generation, evidence synthesis)
+      }
+
+      // ── CHASE 🎯 ─────────────────────────────────────────────────────────────
+      if (name === "CHASE") {
+        // High-volume lead discovery + quick scoring → Haiku (speed at scale)
+        if (
+          ctx.taskType === "lead-discovery" ||
+          ctx.taskType === "quick-score" ||
+          ctx.taskType === "audit-triage"
+        ) {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-haiku-4-5",
+            reason: "CHASE discovery/triage → Haiku (high-volume, fast scoring)",
+          };
+        }
+        // Live lead web audit → Perplexity (real prospect data, live site)
+        if (ctx.taskType === "lead-audit" || ctx.taskType === "web-research") {
+          return {
+            provider: "perplexity",
+            model: PERPLEXITY_MODELS["pro"],
+            reason: "CHASE lead audit → Perplexity sonar-pro (live site verification)",
+          };
+        }
+        // Deep qualification + high-stakes → Opus (P2 revenue on the line)
+        if (ctx.researchDepth === "deep" || (ctx.stakes !== undefined && ctx.stakes >= 85)) {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-opus-4-6",
+            reason: "CHASE deep qualify → Opus (high-stakes lead, P2 revenue path)",
+          };
+        }
+        // Default CHASE → Sonnet (Prompt Forge 4-pass, demo builder, outreach draft)
+      }
+
+      // ── PULSE 📡 ─────────────────────────────────────────────────────────────
+      if (name === "PULSE") {
+        // High-stakes X sentiment (flash crash, major move) → Grok 3 full
+        // MUST check high-stakes BEFORE general social-sentiment to avoid dead code
+        if (
+          (ctx.taskType === "social-sentiment" || ctx.taskType === "x-sentiment") &&
+          ctx.stakes !== undefined &&
+          ctx.stakes >= 85
+        ) {
+          return {
+            provider: "openrouter",
+            model: "x-ai/grok-3",
+            reason:
+              "PULSE high-stakes X sentiment → Grok 3 (maximum X data quality, financial signal)",
+          };
+        }
+        // X/Twitter social sentiment → Grok 3 Mini (ONLY model with native live X data, $0.30/M)
+        // Unique: real-time X posts/trends baked into inference, not a tool call
+        if (
+          ctx.taskType === "social-sentiment" ||
+          ctx.taskType === "x-sentiment" ||
+          ctx.taskType === "community-pulse"
+        ) {
+          return {
+            provider: "openrouter",
+            model: "x-ai/grok-3-mini",
+            reason:
+              "PULSE social sentiment → Grok 3 Mini (native X/Twitter live data, cheapest $0.30/M)",
+          };
+        }
+        // Real-time market news + price moves → Perplexity (live web data, cited sources)
+        if (
+          ctx.taskType === "market-news" ||
+          ctx.taskType === "news-aggregation" ||
+          ctx.taskType === "price-check" ||
+          ctx.taskType === "real-time"
+        ) {
+          const depth: ResearchDepth = ctx.researchDepth ?? "pro";
+          return {
+            provider: "perplexity",
+            model: PERPLEXITY_MODELS[depth],
+            reason: `PULSE real-time data → Perplexity ${PERPLEXITY_MODELS[depth]} (live market web data)`,
+          };
+        }
+        // Sentiment synthesis + narrative → Sonnet (nuanced qualitative analysis)
+        if (ctx.taskType === "sentiment-analysis" || ctx.taskType === "narrative-synthesis") {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-sonnet-4-6",
+            reason: "PULSE sentiment/narrative → Sonnet (nuanced qualitative analysis)",
+          };
+        }
+        // Default PULSE → Gemini 2.5 Flash (1M context, built-in thinking, market data ingestion)
         return {
           provider: "openrouter",
-          model: "anthropic/claude-opus-4-6",
-          reason: "CHASE deep qualification → Opus (high-stakes lead qualify, P2 revenue path)",
+          model: "google/gemini-2.5-flash",
+          reason: "PULSE default → Gemini 2.5 Flash (1M context, thinking mode, market data)",
         };
       }
-      // DEX paper analysis — extended thinking for deep arxiv analysis (P3-5)
-      if (
-        name === "DEX" &&
-        (ctx.taskType === "paper-analysis" || ctx.taskType === "breakthrough-analysis")
-      ) {
+
+      // ── DEX 🗂️ ───────────────────────────────────────────────────────────────
+      if (name === "DEX") {
+        // Web research: arXiv search, blog tracking, changelog monitoring → Perplexity tier-aware
+        if (
+          ctx.taskType === "web-research" ||
+          ctx.taskType === "changelog-monitoring" ||
+          ctx.taskType === "blog-tracking" ||
+          ctx.taskType === "model-monitoring"
+        ) {
+          const depth: ResearchDepth = ctx.researchDepth ?? "pro";
+          return {
+            provider: "perplexity",
+            model: PERPLEXITY_MODELS[depth],
+            reason: `DEX web research (${depth}) → Perplexity ${PERPLEXITY_MODELS[depth]} (real-time web)`,
+          };
+        }
+        // Breakthrough detection → sonar-reasoning-pro (web + reasoning, highest alert quality)
+        if (ctx.taskType === "breakthrough-analysis") {
+          return {
+            provider: "perplexity",
+            model: PERPLEXITY_MODELS["reasoning"],
+            reason: "DEX breakthrough → Perplexity sonar-reasoning-pro (web + reasoning)",
+          };
+        }
+        // Deep arxiv paper analysis → Haiku + extended thinking (cost-effective for many papers)
+        if (ctx.taskType === "paper-analysis") {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-haiku-4-5-20251001",
+            reason:
+              "DEX paper analysis → Haiku 4.5 + extended thinking (deep arxiv, cost-efficient)",
+            extendedThinking: true,
+            thinkingBudget: 8000,
+          };
+        }
+        // Weekly digest synthesis → Sonnet (quality is critical for ARI's most important weekly output)
+        if (ctx.taskType === "weekly-digest-synthesis") {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-sonnet-4-6",
+            reason: "DEX weekly-digest-synthesis → Sonnet (quality-critical weekly output)",
+          };
+        }
+        // Long document analysis (>50K tokens) → Gemini 2.5 Flash (1M context window)
+        if (ctx.contextTokens !== undefined && ctx.contextTokens > 50_000) {
+          return {
+            provider: "openrouter",
+            model: "google/gemini-2.5-flash",
+            reason: `DEX long-doc analysis (${ctx.contextTokens} tokens) → Gemini 2.5 Flash (1M context)`,
+          };
+        }
+        // Default DEX → Perplexity sonar-pro (research agent defaults to web-connected model)
+        return {
+          provider: "perplexity",
+          model: PERPLEXITY_MODELS["pro"],
+          reason: "DEX default → Perplexity sonar-pro (web-connected research)",
+        };
+      }
+
+      // ── RUNE 🔧 (CODEX plane catches most RUNE calls above; this handles edge cases)
+      if (name === "RUNE") {
+        const runeModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
+        validateRuneModel(runeModel);
+        if (ctx.stakes !== undefined && ctx.stakes >= 85) {
+          return {
+            provider: "openrouter",
+            model: "anthropic/claude-opus-4-6",
+            reason: "RUNE high-stakes engineering → Opus (security/architecture)",
+          };
+        }
         return {
           provider: "openrouter",
-          model: "anthropic/claude-haiku-4-5-20251001",
-          reason:
-            "DEX paper/breakthrough analysis → Haiku 4.5 + extended thinking (deep arxiv analysis)",
-          extendedThinking: true,
-          thinkingBudget: 8000,
+          model: runeModel,
+          reason: "RUNE → primary model (engineering build)",
         };
       }
-      // DEX weekly digest synthesis → Sonnet quality (not Haiku) for best weekly output
-      if (name === "DEX" && ctx.taskType === "weekly-digest-synthesis") {
-        return {
-          provider: "openrouter",
-          model: "anthropic/claude-sonnet-4-6",
-          reason:
-            "DEX weekly-digest-synthesis → Sonnet (quality matters for ARI's most important weekly output)",
-        };
-      }
+
+      // ── Default: use profile model (ARI + any unrecognized named agent)
       return {
         provider: profile.provider,
         model: profile.model,
-        reason: `Named agent ${name} uses designated model`,
+        reason: `Named agent ${name} → ${profile.model}`,
       };
     }
   }
 
-  // 2. Engineering tasks → RUNE routing (CODEX plane)
+  // 2. Engineering tasks → RUNE routing
   if (ctx.taskType === "engineering" || ENGINEERING_PATTERNS.some((p) => p.test(ctx.prompt))) {
     const primaryModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
     validateRuneModel(primaryModel);
-    // Security-sensitive engineering → always Opus
-    if (ctx.stakes && ctx.stakes >= 85) {
+    if (ctx.stakes !== undefined && ctx.stakes >= 85) {
       return {
         provider: "openrouter",
         model: "anthropic/claude-opus-4-6",
@@ -258,12 +436,12 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
     };
   }
 
-  // 4. Long-context overflow → Gemini 2.5 Flash
-  if (ctx.contextTokens && ctx.contextTokens > LONG_CONTEXT_TOKEN_THRESHOLD) {
+  // 4. Long-context overflow → Gemini 2.5 Flash (1M context)
+  if (ctx.contextTokens !== undefined && ctx.contextTokens > LONG_CONTEXT_TOKEN_THRESHOLD) {
     return {
-      provider: "google",
+      provider: "openrouter",
       model: "google/gemini-2.5-flash",
-      reason: `Context ${ctx.contextTokens} tokens > 100K threshold → Gemini 2.5 Flash overflow`,
+      reason: `Context ${ctx.contextTokens} tokens > 100K → Gemini 2.5 Flash (1M context)`,
     };
   }
 
@@ -302,7 +480,7 @@ export type CacheConfig = {
   ttl: "5min" | "1h";
 };
 
-// Minimum token thresholds for caching to activate (OpenRouter requirement)
+// Minimum token thresholds for Anthropic prompt caching activation
 const CACHE_THRESHOLD_OPUS = 4_096;
 const CACHE_THRESHOLD_SONNET = 1_024;
 const CACHE_THRESHOLD_HAIKU = 1_024;
@@ -310,22 +488,23 @@ const CACHE_THRESHOLD_HAIKU = 1_024;
 /**
  * Get the appropriate cache configuration for an OpenRouter request.
  *
- * Named agents with stable SOUL+workspace prompts use ttl=1h.
- * This achieves ~70% cost reduction on context-heavy agent requests
- * (90% cache hit rate on stable workspace context per plan Section 19.2).
+ * IMPORTANT: Prompt caching via cache_control is only supported for Anthropic
+ * models routed through OpenRouter. Returns null for Gemini and Perplexity models.
  *
- * Usage: Mark the stable system prompt block with cache_control:
- *   { type: 'text', text: agentSoulFile + workspaceContext,
- *     cache_control: getCacheConfig(ctx) ?? { type: 'ephemeral' } }
+ * Named Anthropic agents use ttl=1h — stable SOUL+workspace context achieves
+ * ~70% cost reduction (90% cache hit rate on SOUL.md + workspace files).
  */
 export function getCacheConfig(ctx: TaskContext): CacheConfig | null {
   const tokens = ctx.contextTokens ?? 0;
 
-  // Named agents → 1h TTL (SOUL.md + workspace context is stable across calls)
   if (ctx.agentName) {
     const name = ctx.agentName.toUpperCase();
     const profile = AGENT_PROFILES[name];
     if (profile) {
+      // Prompt caching only works for Anthropic models
+      if (!profile.model.startsWith("anthropic/")) {
+        return null;
+      }
       const threshold = profile.model.includes("opus")
         ? CACHE_THRESHOLD_OPUS
         : profile.model.includes("haiku")
@@ -333,25 +512,22 @@ export function getCacheConfig(ctx: TaskContext): CacheConfig | null {
           : CACHE_THRESHOLD_SONNET;
 
       if (tokens >= threshold || tokens === 0) {
-        // tokens=0 means unknown — optimistically cache named agents
         return { type: "ephemeral", ttl: "1h" };
       }
     }
   }
 
-  // Other large prompts → 5min default TTL
-  const defaultThreshold = CACHE_THRESHOLD_SONNET;
-  if (tokens >= defaultThreshold) {
+  // Other large Anthropic prompts → 5min default TTL
+  if (tokens >= CACHE_THRESHOLD_SONNET) {
     return { type: "ephemeral", ttl: "5min" };
   }
 
-  return null; // Below caching threshold — don't add cache_control
+  return null;
 }
 
 /**
  * Validate RUNE_PRIMARY_MODEL format at startup.
- * Must be provider/model-name format (e.g. 'anthropic/claude-sonnet-4-6', 'openai/codex-5.3').
- * Returns validation result — caller throws if invalid.
+ * Must be provider/model-name (e.g. 'anthropic/claude-sonnet-4-6', 'openai/codex-5.3').
  */
 export function validateRunePrimaryModel(value: string | undefined): {
   valid: boolean;
@@ -359,7 +535,7 @@ export function validateRunePrimaryModel(value: string | undefined): {
 } {
   if (!value) {
     return { valid: true };
-  } // Unset = use default, that's fine
+  }
   if (!value.includes("/")) {
     return {
       valid: false,

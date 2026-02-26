@@ -1,11 +1,12 @@
 /**
- * ARI Scheduler — 21 Cron Tasks (All Eastern Time, ADR-012)
+ * ARI Scheduler — 24 Cron Tasks (All Eastern Time, ADR-012)
  *
- * The 21 tasks replace the legacy 47 tasks from ARI v10 through consolidation:
- * - SYSTEM tier: health, backup, git-sync (background, no Discord)
+ * The 24 tasks replace the legacy 47 tasks from ARI v10 through consolidation:
+ * - SYSTEM tier: health, backup (background, no Discord)
  * - PULSE tier: market scans and pre-fetch (background data collection)
+ * - NOVA tier: autonomous content trigger (daily market scan → script queue if ≥15% card move)
  * - ARI tier: intelligence delivery to Discord (visible to Pryce)
- * - AGENT tier: named agent tasks (CHASE/DEX weekly, PULSE daily)
+ * - AGENT tier: named agent tasks (CHASE 3x/week, DEX weekly, PULSE daily)
  */
 
 export type CronTask = {
@@ -42,7 +43,7 @@ export const CRON_TASKS: CronTask[] = [
     priority: 2,
   },
 
-  // === PULSE MARKET TASKS (PULSE 🔮) ===
+  // === PULSE MARKET TASKS (PULSE 📡) ===
   {
     id: "pre-fetch-market",
     cron: "0 5 * * *", // 05:00 daily
@@ -170,14 +171,45 @@ export const CRON_TASKS: CronTask[] = [
     priority: 3,
   },
 
+  // === NOVA CONTENT TASKS (NOVA 🎬) ===
+  {
+    id: "nova-market-scan",
+    cron: "0 10 * * *", // 10:00 daily (after PULSE pokemon-price-scan)
+    description:
+      "NOVA autonomous scan — read PULSE market data; if any card moved ≥15%/7d, auto-generate script outline → #video-queue for approval",
+    agent: "NOVA",
+    channel: "video-queue",
+    gate: "approval-required", // Script outline queued; Pryce approves before full production
+    priority: 2,
+  },
+
   // === CHASE BUSINESS TASKS (CHASE 🎯) ===
   {
     id: "leads-pipeline",
     cron: "0 14 * * 1", // Monday 14:00
-    description: "Weekly P2 lead discovery — SerpAPI + Apollo + GBP scan for Indiana B2B leads",
+    description:
+      "P2 lead discovery (Monday) — SerpAPI + Apollo + GBP scan for Indiana B2B leads → #leads",
     agent: "CHASE",
     channel: "leads",
     gate: "auto", // Discovery is auto; outreach requires approval-required
+    priority: 2,
+  },
+  {
+    id: "leads-pipeline-wed",
+    cron: "0 14 * * 3", // Wednesday 14:00
+    description: "P2 lead discovery (Wednesday) — mid-week Indiana B2B pipeline run → #leads",
+    agent: "CHASE",
+    channel: "leads",
+    gate: "auto",
+    priority: 2,
+  },
+  {
+    id: "leads-pipeline-fri",
+    cron: "0 10 * * 5", // Friday 10:00
+    description: "P2 lead discovery (Friday) — end-of-week Indiana B2B pipeline run → #leads",
+    agent: "CHASE",
+    channel: "leads",
+    gate: "auto",
     priority: 2,
   },
   {

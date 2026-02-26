@@ -1,5 +1,5 @@
 /**
- * ARI Market Monitor — Multi-asset monitoring engine (PULSE 🔮)
+ * ARI Market Monitor — Multi-asset monitoring engine (PULSE 📡)
  *
  * Assets tracked:
  *   CRYPTO (6): BTC, ETH, SOL, XRP, AVAX, ARB

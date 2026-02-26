@@ -12,7 +12,7 @@ import {
 import type { PricePoint, SocialSignal, MarketSnapshot } from "./src/market-monitor.js";
 
 /**
- * ARI Market Plugin — Real-time multi-asset monitoring (PULSE 🔮).
+ * ARI Market Plugin — Real-time multi-asset monitoring (PULSE 📡).
  *
  * Handles scheduler events:
  *   pre-fetch-market     05:00 — Prefetch all market data

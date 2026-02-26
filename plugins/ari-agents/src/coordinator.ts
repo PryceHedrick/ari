@@ -7,7 +7,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
  *   ARI   🧠  claude-opus-4-6    CFO / Meta-Orchestrator
  *   NOVA  🎬  claude-sonnet-4-6  P1 Content Creator (PayThePryce)
  *   CHASE 🎯  claude-sonnet-4-6  P2 Lead Connector (Pryceless Solutions)
- *   PULSE 🔮  claude-haiku-4-5   Market Analyst
+ *   PULSE 📡  claude-haiku-4-5   Market Analyst
  *   DEX   🗂️  claude-haiku-4-5   Research Scout
  *
  * CODEX plane (engineering only — task spec + AGENTS.md, NO SOUL files, NO business context):
@@ -33,7 +33,7 @@ export const NAMED_AGENTS: Record<string, AgentProfile> = {
   ARI: { name: "ARI", emoji: "🧠", role: "CFO / Meta-Orchestrator", plane: "zoe" },
   NOVA: { name: "NOVA", emoji: "🎬", role: "P1 Content Creator", plane: "zoe" },
   CHASE: { name: "CHASE", emoji: "🎯", role: "P2 Lead Connector", plane: "zoe" },
-  PULSE: { name: "PULSE", emoji: "🔮", role: "Market Analyst", plane: "zoe" },
+  PULSE: { name: "PULSE", emoji: "📡", role: "Market Analyst", plane: "zoe" },
   DEX: { name: "DEX", emoji: "🗂️", role: "Research Scout", plane: "zoe" },
   RUNE: { name: "RUNE", emoji: "🔧", role: "Engineering Builder", plane: "codex" },
 };
@@ -201,7 +201,7 @@ const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
   },
   PULSE: {
     name: "PULSE",
-    emoji: "🔮",
+    emoji: "📡",
     capabilities: {
       market_monitoring: 0.98,
       price_analysis: 0.97,
