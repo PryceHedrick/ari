@@ -1,0 +1,128 @@
+name: ARI Plane Enforcement
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/ari-*/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "plugins/ari-*/**"
+
+concurrency:
+  group: ari-plane-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plane-audit:
+    name: ZOE/CODEX Plane Audit
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Verify zero apex references
+        run: |
+          COUNT=$(grep -r '"apex"' plugins/ari-*/ --include='*.ts' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT" -gt 0 ]; then
+            echo "FAIL: apex references found in ARI plugins (renamed to zoe/codex)"
+            grep -r '"apex"' plugins/ari-*/ --include='*.ts'
+            exit 1
+          fi
+          COUNT2=$(grep -r "'apex'" plugins/ari-*/ --include='*.ts' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT2" -gt 0 ]; then
+            echo "FAIL: apex references found in ARI plugins (renamed to zoe/codex)"
+            grep -r "'apex'" plugins/ari-*/ --include='*.ts'
+            exit 1
+          fi
+          echo "PASS: zero apex references in ARI plugins"
+
+      - name: Verify HEARTBEAT.md is last in ZOE_WORKSPACE_FILES
+        run: |
+          FILE="plugins/ari-workspace/src/workspace-loader.ts"
+          if [ ! -f "$FILE" ]; then
+            echo "SKIP: $FILE not found (plugin may not exist yet)"
+            exit 0
+          fi
+          ARRAY=$(awk '/ZOE_WORKSPACE_FILES\s*=\s*\[/,/\];/' "$FILE")
+          LAST_FILE=$(echo "$ARRAY" | grep -oP '"[A-Z]+\.md"' | tail -1)
+          if [ "$LAST_FILE" != '"HEARTBEAT.md"' ]; then
+            echo "FAIL: HEARTBEAT.md must be last in ZOE_WORKSPACE_FILES (dynamic timestamps bust prompt cache)"
+            echo "   Last file found: $LAST_FILE"
+            exit 1
+          fi
+          echo "PASS: HEARTBEAT.md is last in ZOE_WORKSPACE_FILES (cache-friendly ordering)"
+
+      - name: Verify CODEX enforcement in ari_workspace_load tool
+        run: |
+          FILE="plugins/ari-memory/index.ts"
+          if [ ! -f "$FILE" ]; then
+            echo "SKIP: $FILE not found"
+            exit 0
+          fi
+          if ! grep -q "isCodexAgent" "$FILE"; then
+            echo "FAIL: Missing CODEX enforcement (isCodexAgent check) in ari_workspace_load handler"
+            exit 1
+          fi
+          if ! grep -q "CODEX plane violation" "$FILE"; then
+            echo "FAIL: Missing ARI-GOVERNANCE error message in ari_workspace_load handler"
+            exit 1
+          fi
+          echo "PASS: CODEX enforcement present in ari_workspace_load tool"
+
+      - name: Verify security audit signal in coordinator
+        run: |
+          FILE="plugins/ari-agents/src/coordinator.ts"
+          if [ ! -f "$FILE" ]; then
+            echo "SKIP: $FILE not found"
+            exit 0
+          fi
+          if ! grep -q "security:codex-violation-attempt" "$FILE"; then
+            echo "FAIL: Missing security:codex-violation-attempt audit signal in coordinator.ts"
+            exit 1
+          fi
+          echo "PASS: security:codex-violation-attempt audit signal present"
+
+      - name: Verify SOUL_FILES Set includes RECOVERY.md
+        run: |
+          FILE="plugins/ari-agents/src/coordinator.ts"
+          if [ ! -f "$FILE" ]; then
+            echo "SKIP: $FILE not found"
+            exit 0
+          fi
+          if ! grep -q '"RECOVERY.md"' "$FILE"; then
+            echo "FAIL: RECOVERY.md missing from SOUL_FILES Set in coordinator.ts"
+            exit 1
+          fi
+          echo "PASS: RECOVERY.md present in SOUL_FILES Set"
+
+  ari-typecheck:
+    name: ARI Plugin TypeCheck
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+
+      - name: Typecheck ari-workspace
+        run: pnpm --filter @ari/workspace typecheck
+
+      - name: Typecheck ari-memory
+        run: pnpm --filter @ari/memory typecheck
+
+      - name: Typecheck ari-agents
+        run: pnpm --filter @ari/agents typecheck
+
+      - name: Typecheck ari-ai
+        run: pnpm --filter @ari/ai typecheck
+
+      - name: Typecheck ari-kernel
+        run: pnpm --filter @ari/kernel typecheck

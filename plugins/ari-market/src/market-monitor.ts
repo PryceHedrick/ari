@@ -128,8 +128,9 @@ export const ASSET_THRESHOLDS: AssetThreshold[] = [
 ];
 
 // Source reliability weights (from Section 26.5 of the plan)
+// pokemontcg.io migrated to Scrydex — https://api.scrydex.com/pokemon/v1/
 export const SOURCE_RELIABILITY: Record<string, number> = {
-  "pokemontcg.io": 1.0,
+  "scrydex.com": 1.0,
   "pokewallet.io": 0.9,
   finnhub: 0.95,
   coingecko: 0.95,

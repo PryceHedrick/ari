@@ -2,12 +2,18 @@
  * ARI Memory Database — SQLite WAL provenance-tracked knowledge store.
  *
  * Schema:
- *   memories        — core knowledge records with content-hash dedup
- *   knowledge_index — TF-IDF inverted index (term → memory_id)
- *   bookmarks       — URL captures with summaries
+ *   memories         — core knowledge records with content-hash dedup
+ *   knowledge_index  — TF-IDF inverted index (term → memory_id)
+ *   bookmarks        — URL captures with summaries
+ *   ari_dora_metrics — DORA operational KPIs (Section 29.10)
  *
  * Section 19.1 PRAGMA config applied on every open.
  * Content-hash SHA-256 ensures no duplicate knowledge accumulates.
+ *
+ * Memory types (A-Mem/Synapse research, arXiv 2502.12110/2601.02744):
+ *   episodic  — specific experiences with time/place/event context
+ *   semantic  — general patterns and extracted knowledge
+ *   procedural — how-to knowledge and process templates
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -43,6 +49,7 @@ function createSchema(db: DatabaseInstance): void {
       domain       TEXT,
       tags         TEXT,
       agent        TEXT,
+      memory_type  TEXT NOT NULL DEFAULT 'semantic',
       trust_level  TEXT NOT NULL DEFAULT 'STANDARD',
       confidence   REAL NOT NULL DEFAULT 0.5,
       created_at   TEXT NOT NULL,
@@ -73,11 +80,27 @@ function createSchema(db: DatabaseInstance): void {
     )
   `).run();
 
-  db.prepare("CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source)").run();
-  db.prepare("CREATE INDEX IF NOT EXISTS idx_memories_domain ON memories(domain)").run();
-  db.prepare("CREATE INDEX IF NOT EXISTS idx_memories_agent  ON memories(agent)").run();
-  db.prepare("CREATE INDEX IF NOT EXISTS idx_knowledge_term  ON knowledge_index(term)").run();
-  db.prepare("CREATE INDEX IF NOT EXISTS idx_bookmarks_url   ON bookmarks(url)").run();
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS ari_dora_metrics (
+      id          TEXT PRIMARY KEY,
+      metric      TEXT NOT NULL,
+      value       REAL NOT NULL,
+      period      TEXT NOT NULL,
+      agent       TEXT,
+      measured_at TEXT NOT NULL,
+      created_at  TEXT DEFAULT (datetime('now'))
+    )
+  `).run();
+
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_memories_source      ON memories(source)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_memories_domain      ON memories(domain)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_memories_agent       ON memories(agent)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_memories_type        ON memories(memory_type)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_knowledge_term       ON knowledge_index(term)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_bookmarks_url        ON bookmarks(url)").run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_dora_metric_period   ON ari_dora_metrics(metric, period)",
+  ).run();
 }
 
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
@@ -99,6 +122,8 @@ export function getDb(): DatabaseInstance {
 
 // ─── Memory records ───────────────────────────────────────────────────────────
 
+export type MemoryType = "episodic" | "semantic" | "procedural";
+
 export interface MemoryRecord {
   id: string;
   content: string;
@@ -108,6 +133,7 @@ export interface MemoryRecord {
   domain?: string;
   tags?: string[];
   agent?: string;
+  memory_type: MemoryType;
   trust_level: string;
   confidence: number;
   created_at: string;
@@ -123,6 +149,7 @@ export interface SaveMemoryInput {
   domain?: string;
   tags?: string[];
   agent?: string;
+  memory_type?: MemoryType;
   trust_level?: string;
   confidence?: number;
   expires_at?: string;
@@ -145,8 +172,8 @@ export function saveMemory(entry: SaveMemoryInput): { id: string; isDuplicate: b
   db.prepare(`
     INSERT INTO memories
       (id, content, content_hash, title, source, domain, tags, agent,
-       trust_level, confidence, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       memory_type, trust_level, confidence, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     entry.content,
@@ -156,6 +183,7 @@ export function saveMemory(entry: SaveMemoryInput): { id: string; isDuplicate: b
     entry.domain ?? null,
     entry.tags ? JSON.stringify(entry.tags) : null,
     entry.agent ?? null,
+    entry.memory_type ?? "semantic",
     entry.trust_level ?? "STANDARD",
     entry.confidence ?? 0.5,
     new Date().toISOString(),
@@ -268,6 +296,85 @@ export function getBookmarkByUrl(url: string): BookmarkRecord | null {
   }
   return { ...row, tags: row.tags ? (JSON.parse(row.tags) as string[]) : undefined };
 }
+
+// ─── DORA Metrics ─────────────────────────────────────────────────────────────
+
+/**
+ * DORA operational KPIs for ARI system health (Section 29.10).
+ *
+ * Tracked metrics:
+ *   briefing_sla        — Morning briefing delivered before 06:30 ET (target ≥95%)
+ *   approval_bypass     — Jobs approved without Pryce (target 0.00%)
+ *   change_failure_rate — Failed deploys / total deploys (target <5%)
+ *   mttr_p0             — Mean time to restore P0 incidents in minutes (target <30)
+ *   agent_error_rate    — Agent errors / total calls per agent (target <2%)
+ *   context_saturation  — Avg context_tokens / context_budget (target <70%)
+ *
+ * DEX reports DORA weekly in #research-digest alongside AI research findings.
+ */
+export interface DoraMetricRecord {
+  id: string;
+  metric: string;
+  value: number;
+  period: string; // ISO date or 'YYYY-WW' for weekly
+  agent?: string;
+  measured_at: string;
+  created_at?: string;
+}
+
+export interface SaveDoraMetricInput {
+  metric: string;
+  value: number;
+  period: string;
+  agent?: string;
+}
+
+/** Record a DORA metric measurement. */
+export function saveDoraMetric(entry: SaveDoraMetricInput): { id: string } {
+  const db = getDb();
+  const id = randomUUID().replace(/-/g, "").slice(0, 16);
+  db.prepare(`
+    INSERT INTO ari_dora_metrics (id, metric, value, period, agent, measured_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    entry.metric,
+    entry.value,
+    entry.period,
+    entry.agent ?? null,
+    new Date().toISOString(),
+  );
+  return { id };
+}
+
+/** Query DORA metrics with optional filters. */
+export function queryDoraMetrics(opts: {
+  metric?: string;
+  agent?: string;
+  limit?: number;
+}): DoraMetricRecord[] {
+  const db = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (opts.metric) {
+    conditions.push("metric = ?");
+    params.push(opts.metric);
+  }
+  if (opts.agent) {
+    conditions.push("agent = ?");
+    params.push(opts.agent);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  params.push(opts.limit ?? 100);
+
+  return db
+    .prepare(`SELECT * FROM ari_dora_metrics ${where} ORDER BY measured_at DESC LIMIT ?`)
+    .all(...params) as DoraMetricRecord[];
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
 
 /** Stats for health monitoring */
 export function getMemoryStats(): { memories: number; bookmarks: number; indexedTerms: number } {

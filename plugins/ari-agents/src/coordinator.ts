@@ -97,6 +97,47 @@ export function validateContextBundlePlane(
   }
 }
 
+// ─── Context Bundle ────────────────────────────────────────────────────────────
+
+/**
+ * ContextBundle — formalized context transfer contract (Section 29.8).
+ * Enforces ZOE/CODEX plane isolation at agent spawn time.
+ *
+ * ZOE agents:   SOUL file + workspace context + task spec (20-30K token budget)
+ * CODEX agents: task spec + AGENTS.md only (5K token budget — NO SOUL files)
+ */
+export interface ContextBundle {
+  plane: "zoe" | "codex";
+  soulFile?: string; // ZOE only — agent SOUL.md content
+  taskSpec: string; // What to build + success criteria
+  workingMemory: {
+    relevantDecisions: string[]; // Compressed prior decisions
+    evidenceIds: string[]; // SQLite references (not full content)
+    sharedStateRefs: string[]; // Keys in pheromone shared state
+  };
+  tokenBudget: number; // 5K (task-agent), 20-30K (named), 100K (max)
+  timeLimit?: string; // '30m', '2h' for ephemeral sub-agents
+}
+
+/**
+ * Validate a ContextBundle against the receiving agent's plane.
+ * Throws on CODEX plane violation (soulFile present, budget exceeded).
+ */
+export function validateContextBundle(bundle: ContextBundle, agentName: string): void {
+  const profile = NAMED_AGENTS[agentName.toUpperCase()];
+  if (!profile) {
+    throw new Error(`[ARI] Unknown agent: ${agentName}`);
+  }
+  if (profile.plane === "codex" && bundle.soulFile) {
+    throw new Error(`[ARI-GOVERNANCE] CODEX plane: soulFile prohibited for ${agentName}`);
+  }
+  if (bundle.tokenBudget > 100_000) {
+    throw new Error(`[ARI] Token budget ${bundle.tokenBudget} exceeds 100K max`);
+  }
+}
+
+// ─── Capability Cards ──────────────────────────────────────────────────────────
+
 /**
  * Get agent capability card for the registry.
  * Used by ari-agents to route tasks to the best available agent.

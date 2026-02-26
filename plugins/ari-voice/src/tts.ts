@@ -1,21 +1,28 @@
 /**
- * ARI Voice — ElevenLabs TTS via eleven_turbo_v2_5
+ * ARI Voice — ElevenLabs TTS with model routing (Section 30.5 + 29.7)
  *
- * Spec from plan (Section 9):
- * - Model: eleven_turbo_v2_5 (40-50ms latency)
- * - Output: OGG Vorbis → Discord voice attachment via multipart/form-data
- * - Gate: ARI_VOICE_ENABLED=true
- * - Settings: stability(0.5), similarity_boost(0.8), style(0.3)
- * - Max words: 150 (briefing audio only — not full text)
+ * Model routing (gate: ARI_ELEVENLABS_V3_ENABLED):
+ *   briefing → eleven_v3 (highest quality, ~300ms)          Sprint 4+
+ *   alert    → eleven_flash_v2_5 (75ms real-time)           Sprint 4+
+ *   default  → eleven_turbo_v2_5 (40-50ms, current stable) always
+ *
+ * Output: OGG Vorbis → Discord voice attachment via multipart/form-data
+ * Gate: ARI_VOICE_ENABLED=true
+ * Settings: stability(0.5), similarity_boost(0.8), style(0.3)
+ * Max words: 150 (briefing audio only — not full text)
  *
  * ARI's voice ID is stored in ELEVENLABS_VOICE_ID env var.
  * Falls back to a sensible default if not set.
  */
 
+/** Audio context — used to select the optimal ElevenLabs model. */
+export type AudioContextType = "briefing" | "alert" | "default";
+
 export type TTSRequest = {
   text: string; // ≤150 words (enforced before calling)
   voiceId?: string; // Overrides ELEVENLABS_VOICE_ID
-  model?: string; // Defaults to eleven_turbo_v2_5
+  model?: string; // Explicit override — bypasses routing if set
+  audioType?: AudioContextType; // Context for model routing (default: 'default')
 };
 
 export type TTSResult =
@@ -31,8 +38,30 @@ export type TTSResult =
     };
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
-const DEFAULT_MODEL = "eleven_turbo_v2_5";
+const MODEL_TURBO = "eleven_turbo_v2_5"; // Current stable: 40-50ms
+const MODEL_V3 = "eleven_v3"; // Sprint 4: briefings — highest quality
+const MODEL_FLASH = "eleven_flash_v2_5"; // Sprint 4: alerts — 75ms real-time
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // ARI's voice (configurable)
+
+/**
+ * Select ElevenLabs model based on audio context and feature gate.
+ * Gate: ARI_ELEVENLABS_V3_ENABLED=true enables v3/Flash routing (Sprint 4).
+ * Default: eleven_turbo_v2_5 — always valid, no gate required.
+ */
+export function selectModel(audioType: AudioContextType = "default"): string {
+  const v3Enabled = process.env.ARI_ELEVENLABS_V3_ENABLED === "true";
+  if (!v3Enabled) {
+    return MODEL_TURBO;
+  }
+  switch (audioType) {
+    case "briefing":
+      return MODEL_V3;
+    case "alert":
+      return MODEL_FLASH;
+    default:
+      return MODEL_TURBO;
+  }
+}
 
 const VOICE_SETTINGS = {
   stability: 0.5,
@@ -68,7 +97,7 @@ export async function synthesizeSpeech(request: TTSRequest): Promise<TTSResult> 
   }
 
   const voiceId = request.voiceId ?? process.env.ELEVENLABS_VOICE_ID ?? DEFAULT_VOICE_ID;
-  const modelId = request.model ?? DEFAULT_MODEL;
+  const modelId = request.model ?? selectModel(request.audioType ?? "default");
   const trimmed = enforceWordLimit(request.text);
   const wordCount = trimmed.split(/\s+/).length;
 

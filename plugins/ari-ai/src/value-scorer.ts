@@ -31,12 +31,15 @@ export type TaskContext = {
   stakes?: number; // 0-100 (high = more consequential)
   quality?: number; // 0-100 (high = quality-critical output)
   history?: number; // 0-100 (high = rich usage history)
+  plane?: ContextPlane;
 };
 
 export type ModelRoute = {
   provider: "openrouter" | "perplexity" | "google" | "openai";
   model: string;
   reason: string;
+  extendedThinking?: boolean;
+  thinkingBudget?: number;
 };
 
 // Named agent profiles — always use designated model
@@ -154,11 +157,30 @@ const TIER_MODEL_MAP: Record<ModelTier, string> = {
   haiku: "anthropic/claude-haiku-4-5",
 };
 
+function validateRuneModel(model: string): void {
+  if (!model.startsWith("anthropic/") && !model.startsWith("openai/")) {
+    throw new Error(
+      `[ARI] Invalid RUNE_PRIMARY_MODEL format: "${model}". ` +
+        'Must be "anthropic/..." or "openai/..." (e.g., "openai/codex-5.3" or "anthropic/claude-sonnet-4-6")',
+    );
+  }
+}
+
 /**
  * Route a task to the best model.
- * Priority: named agent → engineering → research → long-context → ValueScore
+ * Priority: CODEX plane → named agent → engineering → research → long-context → ValueScore
  */
 export function routeToModel(ctx: TaskContext): ModelRoute {
+  // 0. CODEX plane fast-path — engineering context always routes to RUNE_PRIMARY_MODEL
+  if (ctx.plane === "codex") {
+    const codexModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
+    return {
+      provider: "openrouter",
+      model: codexModel,
+      reason: "CODEX plane fast-path → RUNE primary model (engineering context)",
+    };
+  }
+
   // 1. Named agent — always use profile model
   if (ctx.agentName) {
     const name = ctx.agentName.toUpperCase();
@@ -176,6 +198,29 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
           reason: "CHASE deep qualification → Opus (high-stakes lead qualify, P2 revenue path)",
         };
       }
+      // DEX paper analysis — extended thinking for deep arxiv analysis (P3-5)
+      if (
+        name === "DEX" &&
+        (ctx.taskType === "paper-analysis" || ctx.taskType === "breakthrough-analysis")
+      ) {
+        return {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4-5-20251001",
+          reason:
+            "DEX paper/breakthrough analysis → Haiku 4.5 + extended thinking (deep arxiv analysis)",
+          extendedThinking: true,
+          thinkingBudget: 8000,
+        };
+      }
+      // DEX weekly digest synthesis → Sonnet quality (not Haiku) for best weekly output
+      if (name === "DEX" && ctx.taskType === "weekly-digest-synthesis") {
+        return {
+          provider: "openrouter",
+          model: "anthropic/claude-sonnet-4-6",
+          reason:
+            "DEX weekly-digest-synthesis → Sonnet (quality matters for ARI's most important weekly output)",
+        };
+      }
       return {
         provider: profile.provider,
         model: profile.model,
@@ -187,6 +232,7 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
   // 2. Engineering tasks → RUNE routing (CODEX plane)
   if (ctx.taskType === "engineering" || ENGINEERING_PATTERNS.some((p) => p.test(ctx.prompt))) {
     const primaryModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
+    validateRuneModel(primaryModel);
     // Security-sensitive engineering → always Opus
     if (ctx.stakes && ctx.stakes >= 85) {
       return {
@@ -300,4 +346,33 @@ export function getCacheConfig(ctx: TaskContext): CacheConfig | null {
   }
 
   return null; // Below caching threshold — don't add cache_control
+}
+
+/**
+ * Validate RUNE_PRIMARY_MODEL format at startup.
+ * Must be provider/model-name format (e.g. 'anthropic/claude-sonnet-4-6', 'openai/codex-5.3').
+ * Returns validation result — caller throws if invalid.
+ */
+export function validateRunePrimaryModel(value: string | undefined): {
+  valid: boolean;
+  reason?: string;
+} {
+  if (!value) {
+    return { valid: true };
+  } // Unset = use default, that's fine
+  if (!value.includes("/")) {
+    return {
+      valid: false,
+      reason: `RUNE_PRIMARY_MODEL must be 'provider/model' format, got: ${value}`,
+    };
+  }
+  const [provider] = value.split("/");
+  const ALLOWED_PROVIDERS = ["anthropic", "openai", "google", "perplexity", "mistral"];
+  if (!ALLOWED_PROVIDERS.includes(provider)) {
+    return {
+      valid: false,
+      reason: `RUNE_PRIMARY_MODEL provider '${provider}' not in allowed list: ${ALLOWED_PROVIDERS.join(", ")}`,
+    };
+  }
+  return { valid: true };
 }
