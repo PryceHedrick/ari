@@ -3,7 +3,7 @@ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { CRON_TASKS, getTasksByAgent, getCriticalTasks } from "./src/cron-tasks.js";
 
 /**
- * ARI Scheduler Plugin — 18 cron tasks across all named agents
+ * ARI Scheduler Plugin — 19 cron tasks across all named agents
  *
  * All tasks run in Eastern Time (America/New_York — ADR-012).
  *
@@ -13,16 +13,16 @@ import { CRON_TASKS, getTasksByAgent, getCriticalTasks } from "./src/cron-tasks.
  *           market-midday, market-close
  *   DEX:    news-digest, ai-research-scan, x-likes-digest, weekly-feedback-synthesis
  *   ARI:    morning-briefing (06:30), workday-wrap (16:00 M-F), evening-briefing (21:00),
- *           memory-dedup (22:00), cost-audit (23:45)
+ *           memory-dedup (22:00), cost-audit (23:45), weekly-wisdom (Sun 18:00)
  *   CHASE:  leads-pipeline (Mon 14:00), crm-sync (Fri 18:00)
  */
 const plugin = {
   id: "ari-scheduler",
   name: "ARI Scheduler",
-  description: "18 cron tasks — all named agents, Eastern Time (ADR-012)",
+  description: "19 cron tasks — all named agents, Eastern Time (ADR-012)",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi): void {
-    // Register all 18 tasks when OpenClaw scheduler API is available
+    // Register all 19 tasks when OpenClaw scheduler API is available
     // The scheduler is wired to the named agent coordinator for dispatch
     if (typeof (api as Record<string, unknown>).registerCron === "function") {
       const registerCron = (api as Record<string, unknown>).registerCron as (task: {
@@ -47,11 +47,11 @@ const plugin = {
         });
       }
     } else {
-      // OpenClaw host does not implement registerCron — all 18 tasks are skipped.
+      // OpenClaw host does not implement registerCron — all 19 tasks are skipped.
       // This is a P0 failure for the morning-briefing task.
       api.emit?.("ari:scheduler:warn", {
         message:
-          "registerCron not available on OpenClaw API — all 18 scheduled tasks are disabled.",
+          "registerCron not available on OpenClaw API — all 19 scheduled tasks are disabled.",
         taskCount: CRON_TASKS.length,
       });
     }

@@ -1,7 +1,7 @@
 /**
- * ARI Scheduler — 18 Cron Tasks (All Eastern Time, ADR-012)
+ * ARI Scheduler — 19 Cron Tasks (All Eastern Time, ADR-012)
  *
- * The 18 tasks replace the legacy 47 tasks from ARI v10 through consolidation:
+ * The 19 tasks replace the legacy 47 tasks from ARI v10 through consolidation:
  * - SYSTEM tier: health, backup, git-sync (background, no Discord)
  * - PULSE tier: market scans and pre-fetch (background data collection)
  * - ARI tier: intelligence delivery to Discord (visible to Pryce)
@@ -19,7 +19,7 @@ export type CronTask = {
 };
 
 /**
- * All 18 scheduled tasks — Eastern Time (America/New_York)
+ * All 19 scheduled tasks — Eastern Time (America/New_York)
  *
  * ADR-012: ALL cron schedules use Eastern Time
  */
@@ -187,6 +187,17 @@ export const CRON_TASKS: CronTask[] = [
     agent: "CHASE",
     gate: "auto",
     priority: 3,
+  },
+
+  // === ARI WEEKLY TASKS (ARI 🧠) ===
+  {
+    id: "weekly-wisdom",
+    cron: "0 18 * * 0", // Sunday 18:00
+    description: "Weekly wisdom digest + soul review → #ari-main",
+    agent: "ARI",
+    channel: "ari-main",
+    gate: "auto",
+    priority: 2,
   },
 ];
 

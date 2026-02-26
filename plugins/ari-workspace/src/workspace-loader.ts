@@ -184,8 +184,18 @@ export function registerWorkspaceHooks(api: OpenClawPluginApi): void {
       files = ZOE_WORKSPACE_FILES;
     }
 
-    // Enforce plane boundaries — throw on violation
-    validateContextBundlePlane(agentName, files);
+    // Enforce plane boundaries — throw on violation (emit security event before re-throwing)
+    try {
+      validateContextBundlePlane(agentName, files);
+    } catch (err) {
+      api.emit?.("security:codex-violation-attempt", {
+        agentName,
+        files,
+        message: err instanceof Error ? err.message : String(err),
+        timestamp: new Date().toISOString(),
+      });
+      throw err;
+    }
 
     const sections: string[] = [];
 
