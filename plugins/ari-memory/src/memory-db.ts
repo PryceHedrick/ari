@@ -101,6 +101,87 @@ function createSchema(db: DatabaseInstance): void {
   db.prepare(
     "CREATE INDEX IF NOT EXISTS idx_dora_metric_period   ON ari_dora_metrics(metric, period)",
   ).run();
+
+  // ─── Section 7: Learning Loop Tables ───────────────────────────────────────
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS p1_feedback (
+      job_id       TEXT PRIMARY KEY,
+      approved     INTEGER NOT NULL DEFAULT 0,
+      approval_note TEXT,
+      views_7d     INTEGER,
+      retention_pct REAL,
+      timestamp    TEXT NOT NULL
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS p2_feedback (
+      lead_id       TEXT PRIMARY KEY,
+      outcome       TEXT NOT NULL,
+      outcome_note  TEXT,
+      vertical      TEXT,
+      score_at_send REAL,
+      timestamp     TEXT NOT NULL
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS prompt_versions (
+      id             TEXT PRIMARY KEY,
+      pipeline       TEXT NOT NULL,
+      version        INTEGER NOT NULL,
+      prompt         TEXT NOT NULL,
+      rationale      TEXT,
+      effective_date TEXT NOT NULL,
+      created_at     TEXT NOT NULL
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS research_items (
+      id         TEXT PRIMARY KEY,
+      source     TEXT NOT NULL,
+      title      TEXT NOT NULL,
+      summary    TEXT NOT NULL,
+      relevance  TEXT,
+      adopted    INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )
+  `).run();
+
+  // ─── Section 22 / Section 3.4: Agent Registry ──────────────────────────────
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS agent_registry (
+      name        TEXT PRIMARY KEY,
+      emoji       TEXT NOT NULL,
+      role        TEXT NOT NULL,
+      plane       TEXT NOT NULL DEFAULT 'zoe',
+      model       TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'active',
+      last_seen   TEXT,
+      spawn_count INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL
+    )
+  `).run();
+
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_p1_feedback_timestamp    ON p1_feedback(timestamp)",
+  ).run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_p2_feedback_outcome      ON p2_feedback(outcome)",
+  ).run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_p2_feedback_vertical     ON p2_feedback(vertical)",
+  ).run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_prompt_versions_pipeline ON prompt_versions(pipeline, version)",
+  ).run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_research_items_source    ON research_items(source)",
+  ).run();
+  db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_research_items_adopted   ON research_items(adopted)",
+  ).run();
 }
 
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
@@ -389,4 +470,242 @@ export function getMemoryStats(): { memories: number; bookmarks: number; indexed
     .prepare("SELECT COUNT(DISTINCT term) as indexedTerms FROM knowledge_index")
     .get() as { indexedTerms: number };
   return { memories, bookmarks, indexedTerms };
+}
+
+// ─── P1 Feedback ──────────────────────────────────────────────────────────────
+
+export interface P1FeedbackRecord {
+  job_id: string;
+  approved: boolean;
+  approval_note?: string;
+  views_7d?: number;
+  retention_pct?: number;
+  timestamp: string;
+}
+
+export function saveP1Feedback(entry: Omit<P1FeedbackRecord, "timestamp">): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT OR REPLACE INTO p1_feedback
+      (job_id, approved, approval_note, views_7d, retention_pct, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    entry.job_id,
+    entry.approved ? 1 : 0,
+    entry.approval_note ?? null,
+    entry.views_7d ?? null,
+    entry.retention_pct ?? null,
+    new Date().toISOString(),
+  );
+}
+
+export function getP1FeedbackStats(): {
+  totalApproved: number;
+  totalRejected: number;
+  avgRetention: number | null;
+} {
+  const db = getDb();
+  const { totalApproved } = db
+    .prepare("SELECT COUNT(*) as totalApproved FROM p1_feedback WHERE approved = 1")
+    .get() as { totalApproved: number };
+  const { totalRejected } = db
+    .prepare("SELECT COUNT(*) as totalRejected FROM p1_feedback WHERE approved = 0")
+    .get() as { totalRejected: number };
+  const { avgRetention } = db
+    .prepare(
+      "SELECT AVG(retention_pct) as avgRetention FROM p1_feedback WHERE retention_pct IS NOT NULL",
+    )
+    .get() as { avgRetention: number | null };
+  return { totalApproved, totalRejected, avgRetention };
+}
+
+// ─── P2 Feedback ──────────────────────────────────────────────────────────────
+
+export interface P2FeedbackRecord {
+  lead_id: string;
+  outcome: "won" | "meeting_booked" | "lost" | "no_response";
+  outcome_note?: string;
+  vertical?: string;
+  score_at_send?: number;
+  timestamp: string;
+}
+
+export function saveP2Feedback(entry: Omit<P2FeedbackRecord, "timestamp">): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT OR REPLACE INTO p2_feedback
+      (lead_id, outcome, outcome_note, vertical, score_at_send, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    entry.lead_id,
+    entry.outcome,
+    entry.outcome_note ?? null,
+    entry.vertical ?? null,
+    entry.score_at_send ?? null,
+    new Date().toISOString(),
+  );
+}
+
+export function getP2FeedbackByVertical(): Array<{
+  vertical: string;
+  won: number;
+  total: number;
+  conversionRate: number;
+}> {
+  const db = getDb();
+  const rows = db
+    .prepare(`
+    SELECT vertical,
+           SUM(CASE WHEN outcome IN ('won','meeting_booked') THEN 1 ELSE 0 END) as won,
+           COUNT(*) as total
+    FROM p2_feedback
+    WHERE vertical IS NOT NULL
+    GROUP BY vertical
+    ORDER BY total DESC
+  `)
+    .all() as Array<{ vertical: string; won: number; total: number }>;
+  return rows.map((r) => ({ ...r, conversionRate: r.total > 0 ? r.won / r.total : 0 }));
+}
+
+// ─── Prompt Versions ──────────────────────────────────────────────────────────
+
+export interface PromptVersionRecord {
+  id: string;
+  pipeline: "p1" | "p2";
+  version: number;
+  prompt: string;
+  rationale?: string;
+  effective_date: string;
+  created_at: string;
+}
+
+export function savePromptVersion(entry: Omit<PromptVersionRecord, "id" | "created_at">): {
+  id: string;
+} {
+  const db = getDb();
+  const id = randomUUID().replace(/-/g, "").slice(0, 16);
+  db.prepare(`
+    INSERT INTO prompt_versions (id, pipeline, version, prompt, rationale, effective_date, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    entry.pipeline,
+    entry.version,
+    entry.prompt,
+    entry.rationale ?? null,
+    entry.effective_date,
+    new Date().toISOString(),
+  );
+  return { id };
+}
+
+export function getLatestPromptVersion(pipeline: "p1" | "p2"): PromptVersionRecord | null {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM prompt_versions WHERE pipeline = ? ORDER BY version DESC LIMIT 1")
+    .get(pipeline) as PromptVersionRecord | null;
+}
+
+// ─── Research Items ───────────────────────────────────────────────────────────
+
+export interface ResearchItemRecord {
+  id: string;
+  source: string;
+  title: string;
+  summary: string;
+  relevance?: string;
+  adopted: boolean;
+  created_at: string;
+}
+
+type ResearchItemRow = Omit<ResearchItemRecord, "adopted"> & { adopted: number };
+
+export function saveResearchItem(entry: Omit<ResearchItemRecord, "id" | "created_at">): {
+  id: string;
+} {
+  const db = getDb();
+  const id = randomUUID().replace(/-/g, "").slice(0, 16);
+  db.prepare(`
+    INSERT INTO research_items (id, source, title, summary, relevance, adopted, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    entry.source,
+    entry.title,
+    entry.summary,
+    entry.relevance ?? null,
+    entry.adopted ? 1 : 0,
+    new Date().toISOString(),
+  );
+  return { id };
+}
+
+export function queryResearchItems(opts: {
+  adopted?: boolean;
+  limit?: number;
+}): ResearchItemRecord[] {
+  const db = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (opts.adopted !== undefined) {
+    conditions.push("adopted = ?");
+    params.push(opts.adopted ? 1 : 0);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  params.push(opts.limit ?? 50);
+
+  const rows = db
+    .prepare(`SELECT * FROM research_items ${where} ORDER BY created_at DESC LIMIT ?`)
+    .all(...params) as ResearchItemRow[];
+
+  return rows.map((r) => ({ ...r, adopted: r.adopted === 1 }));
+}
+
+export function markResearchItemAdopted(id: string): void {
+  const db = getDb();
+  db.prepare("UPDATE research_items SET adopted = 1 WHERE id = ?").run(id);
+}
+
+// ─── Agent Registry ───────────────────────────────────────────────────────────
+
+export interface AgentRegistryRecord {
+  name: string;
+  emoji: string;
+  role: string;
+  plane: "zoe" | "codex";
+  model: string;
+  status: "active" | "idle" | "error";
+  last_seen?: string;
+  spawn_count: number;
+  created_at: string;
+}
+
+export function upsertAgentRegistry(
+  entry: Omit<AgentRegistryRecord, "spawn_count" | "created_at">,
+): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO agent_registry (name, emoji, role, plane, model, status, last_seen, spawn_count, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      status = excluded.status,
+      last_seen = excluded.last_seen,
+      spawn_count = spawn_count + 1
+  `).run(
+    entry.name,
+    entry.emoji,
+    entry.role,
+    entry.plane,
+    entry.model,
+    entry.status,
+    entry.last_seen ?? new Date().toISOString(),
+    new Date().toISOString(),
+  );
+}
+
+export function getAgentRegistry(): AgentRegistryRecord[] {
+  const db = getDb();
+  return db.prepare("SELECT * FROM agent_registry ORDER BY name").all() as AgentRegistryRecord[];
 }

@@ -138,12 +138,157 @@ export function validateContextBundle(bundle: ContextBundle, agentName: string):
 
 // ─── Capability Cards ──────────────────────────────────────────────────────────
 
+/** Section 22.3: Agent Capability Card — live JSON descriptor published by each agent */
+export interface AgentCapabilityCard {
+  name: string; // 'NOVA', 'CHASE', etc.
+  emoji: string;
+  capabilities: Record<string, number>; // task_type → confidence (0-1)
+  currentLoad: { queued: number; maxCapacity: number };
+  plane: "zoe" | "codex";
+  tools: string[];
+  estimatedLatency: { [taskType: string]: string }; // '2-5min', '<1min', etc.
+}
+
+/** Default capability cards per agent — static bootstrap, refreshed at runtime via self-reports */
+const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
+  ARI: {
+    name: "ARI",
+    emoji: "🧠",
+    capabilities: {
+      orchestration: 0.99,
+      governance: 0.99,
+      agent_coordination: 0.97,
+      financial_reasoning: 0.95,
+      briefing_synthesis: 0.93,
+    },
+    currentLoad: { queued: 0, maxCapacity: 5 },
+    plane: "zoe",
+    tools: ["all"],
+    estimatedLatency: { orchestration: "<30s", governance: "<1min" },
+  },
+  NOVA: {
+    name: "NOVA",
+    emoji: "🎬",
+    capabilities: {
+      video_script_generation: 0.95,
+      hook_writing: 0.97,
+      seo_metadata: 0.9,
+      market_narrative: 0.88,
+      thumbnail_generation: 0.85,
+      trend_analysis: 0.65,
+      lead_qualification: 0.3,
+    },
+    currentLoad: { queued: 0, maxCapacity: 10 },
+    plane: "zoe",
+    tools: ["pokemontcg.io", "SerpAPI", "ElevenLabs", "Whisper", "Ideogram", "DALL-E-3"],
+    estimatedLatency: { video_script_generation: "3-5min", hook_writing: "<1min" },
+  },
+  CHASE: {
+    name: "CHASE",
+    emoji: "🎯",
+    capabilities: {
+      lead_qualification: 0.97,
+      prompt_forge: 0.95,
+      demo_building: 0.92,
+      outreach_drafting: 0.9,
+      vertical_research: 0.75,
+      content_creation: 0.3,
+    },
+    currentLoad: { queued: 0, maxCapacity: 10 },
+    plane: "zoe",
+    tools: ["SerpAPI", "Apollo.io", "GoogleBusinessProfile", "GoogleMaps", "Playwright"],
+    estimatedLatency: { lead_qualification: "2-5min", outreach_drafting: "<2min" },
+  },
+  PULSE: {
+    name: "PULSE",
+    emoji: "🔮",
+    capabilities: {
+      market_monitoring: 0.98,
+      price_analysis: 0.97,
+      anomaly_detection: 0.93,
+      sentiment_analysis: 0.88,
+      market_narrative: 0.85,
+      script_generation: 0.2,
+    },
+    currentLoad: { queued: 0, maxCapacity: 20 },
+    plane: "zoe",
+    tools: ["CoinGecko", "Finnhub", "pokemontcg.io", "X-API", "Reddit"],
+    estimatedLatency: { market_monitoring: "<30s", price_analysis: "<1min" },
+  },
+  DEX: {
+    name: "DEX",
+    emoji: "🗂️",
+    capabilities: {
+      research_synthesis: 0.97,
+      weekly_digest: 0.95,
+      arxiv_monitoring: 0.93,
+      social_signal_detection: 0.88,
+      breakthrough_analysis: 0.9,
+      lead_qualification: 0.2,
+    },
+    currentLoad: { queued: 0, maxCapacity: 15 },
+    plane: "zoe",
+    tools: ["Perplexity", "arXiv", "X-API", "Reddit", "Tavily"],
+    estimatedLatency: { research_synthesis: "2-5min", weekly_digest: "5-10min" },
+  },
+  RUNE: {
+    name: "RUNE",
+    emoji: "🔧",
+    capabilities: {
+      code_generation: 0.97,
+      plugin_development: 0.95,
+      test_writing: 0.93,
+      refactoring: 0.92,
+      debugging: 0.9,
+      architecture: 0.85,
+    },
+    currentLoad: { queued: 0, maxCapacity: 5 },
+    plane: "codex",
+    tools: ["TypeScript", "Vitest", "ESLint", "Git", "npm"],
+    estimatedLatency: { code_generation: "1-3min", test_writing: "<2min" },
+  },
+};
+
 /**
- * Get agent capability card for the registry.
- * Used by ari-agents to route tasks to the best available agent.
+ * Get agent capability card from the registry.
+ * Returns default static card — runtime self-reports update currentLoad dynamically.
  */
-export function getAgentCapabilityCard(agentName: string): AgentProfile | undefined {
-  return NAMED_AGENTS[agentName.toUpperCase()];
+export function getAgentCapabilityCard(agentName: string): AgentCapabilityCard | undefined {
+  return DEFAULT_CAPABILITY_CARDS[agentName.toUpperCase()];
+}
+
+/**
+ * Route a task to the best available agent using capability scoring.
+ * score = capability_confidence × (1 - load_factor) × priority_multiplier
+ * If max score < 0.7: escalate to ARI for manual dispatch.
+ */
+export function routeTaskToAgent(
+  taskType: string,
+  priority: 1 | 2 | 3 | 4 | 5 = 3,
+): { agentName: string; score: number } | { escalate: true; reason: string } {
+  let bestAgent = "";
+  let bestScore = 0;
+
+  for (const [name, card] of Object.entries(DEFAULT_CAPABILITY_CARDS)) {
+    const confidence = card.capabilities[taskType] ?? 0;
+    const loadFactor = card.currentLoad.queued / card.currentLoad.maxCapacity;
+    const priorityMultiplier = priority <= 2 ? 1.2 : priority >= 4 ? 0.8 : 1.0;
+    const score = confidence * (1 - loadFactor) * priorityMultiplier;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestAgent = name;
+    }
+  }
+
+  if (bestScore < 0.7) {
+    return {
+      escalate: true,
+      reason: `No agent with score ≥0.7 for task type '${taskType}' (best: ${Math.round(bestScore * 100)}%)`,
+    };
+  }
+
+  return { agentName: bestAgent, score: bestScore };
 }
 
 export function registerAgentCoordinator(_api: OpenClawPluginApi): void {
@@ -152,4 +297,215 @@ export function registerAgentCoordinator(_api: OpenClawPluginApi): void {
   // hook here as it would shadow ari-ai's comprehensive Perplexity/Gemini routing.
   // NAMED_AGENTS, resolveAgentModel, and getAgentCapabilityCard are exported
   // for direct consumption by other plugins.
+}
+
+// ─── Section 22: Agent Coordination Types ─────────────────────────────────────
+
+/** Section 22.4: Peer-to-Peer Handoff — zero synchronous blocking */
+export interface ConversationTurn {
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: string;
+}
+
+export interface Decision {
+  id: string;
+  description: string;
+  rationale: string;
+  madeBy: string;
+  timestamp: string;
+}
+
+export interface AgentHandoff {
+  sourceAgent: string;
+  targetAgent: string;
+  task: {
+    type: string;
+    description: string;
+    inputs: Record<string, unknown>;
+    deadline: string;
+    priority: 1 | 2 | 3 | 4 | 5;
+    evidenceIds?: string[];
+  };
+  context: {
+    conversationHistory: ConversationTurn[];
+    previousDecisions: Decision[];
+    sharedMemoryRefs: string[]; // References to shared state, not full dumps
+  };
+  escalateBackConditions: string[]; // "if budget_exceeds $5, return to ARI"
+}
+
+/** Section 22.5: Pheromone signal — lightweight async event marker */
+export interface AgentSignal {
+  type: "help_request" | "escalation" | "task_complete" | "alert";
+  source: string;
+  target?: string; // undefined = broadcast to all
+  strength: number; // 0-1 urgency
+  payload: Record<string, unknown>;
+  expiresAt: string; // TTL on pheromone
+}
+
+/** Section 22.5: Async shared state store with pheromone signals */
+export interface AgentTask {
+  id: string;
+  type: string;
+  description: string;
+  inputs: Record<string, unknown>;
+  priority: 1 | 2 | 3 | 4 | 5;
+  deadline?: string;
+  createdAt: string;
+}
+
+export interface MarketAnalysis {
+  asset: string;
+  signal: string;
+  confidence: number;
+  timestamp: string;
+}
+
+export interface Finding {
+  id: string;
+  source: string;
+  title: string;
+  summary: string;
+  relevance: string;
+  timestamp: string;
+}
+
+export interface ContentEvent {
+  id: string;
+  type: string;
+  scheduledAt: string;
+  description: string;
+  status: "planned" | "in-progress" | "completed";
+}
+
+export interface Lead {
+  leadId: string;
+  businessName: string;
+  score: number;
+  vertical: string;
+  status: "discovered" | "audited" | "qualified" | "outreach-ready";
+}
+
+export interface ScriptSummary {
+  jobId: string;
+  title: string;
+  topic: string;
+  confidence: number;
+  approvalStatus: "auto-approved" | "pending-review" | "rejected";
+  createdAt: string;
+}
+
+export interface MarketSnapshot {
+  timestamp: string;
+  assets: Record<string, { price: number; change24h: number; signal?: string }>;
+}
+
+export interface ResearchDigest {
+  weekOf: string;
+  papers: Array<{ title: string; summary: string; relevance: string }>;
+  improvements: string[];
+  postedAt?: string;
+}
+
+export interface LeadSummary {
+  weekOf: string;
+  hotLeads: number;
+  warmLeads: number;
+  coldLeads: number;
+  outreachSent: number;
+  conversions: number;
+}
+
+export interface SharedAgentState {
+  // Task queues (each agent reads its own)
+  queues: { [agentName: string]: AgentTask[] };
+
+  // Pheromone signals — lightweight event markers (checked every 15-20s)
+  signals: AgentSignal[];
+
+  // Shared knowledge cache
+  marketCache: { [key: string]: MarketAnalysis };
+  recentFindings: Finding[];
+  contentCalendar: ContentEvent[];
+  leadPipeline: Lead[];
+
+  // Cross-agent knowledge from completed work
+  novaLastScripts: ScriptSummary[]; // NOVA publishes for DEX/PULSE to reference
+  pulseLastAnalysis: MarketSnapshot; // PULSE publishes for NOVA to use in scripts
+  dexLatestDigest: ResearchDigest; // DEX publishes for all agents
+  chaseLeadSummary: LeadSummary; // CHASE publishes for ARI review
+}
+
+// ─── Section 22.7: Dynamic Sub-Agent Spawning ─────────────────────────────────
+
+/**
+ * SpawnPackage — selective context passed to ephemeral child agents.
+ * 42% memory overhead reduction vs full context clone (AgentSpawn arXiv:2602.07072).
+ * YAGNI tool set + minimum required context — never full conversation dump.
+ */
+export interface SpawnPackage {
+  parent: string; // Parent agent name ('NOVA', 'CHASE', etc.)
+  specialization: string; // Task type the child specializes in
+  context: string; // Selective context (not full history)
+  subtask: AgentTask; // The specific task to execute
+  tools: string[]; // Minimum tools required (YAGNI)
+  plane: "zoe" | "codex"; // Inherits parent's plane — never escalate
+  timeLimit: string; // '30m', '2h' — ephemeral children only
+  tokenBudget: number; // 5K (task-agent) — tight budget
+}
+
+/**
+ * ResumePackage — result returned by ephemeral child agent.
+ * Parent integrates childResult via parent.memory.integrateChildResult().
+ * Child is destroyed after returning — registry logs spawn event to SQLite.
+ */
+export interface ResumePackage {
+  childId: string; // Child agent ID (UUID)
+  parentAgent: string; // Back-reference to parent
+  completedOutput: unknown; // Task-specific result payload
+  methodsUsed: string[]; // Tools/approaches used
+  tokenCost: number; // Total tokens consumed
+  errors: string[]; // Any errors encountered (non-fatal)
+  suggestedNextSteps: string[]; // Child's recommendations for parent
+  completedAt: string; // ISO timestamp
+}
+
+/**
+ * Compute dynamic spawning complexity score (Section 22.7).
+ * If complexity > 0.7, spawn a specialized child agent.
+ */
+export function computeSpawnComplexity(task: {
+  numTools: number;
+  contextLength: number;
+  decisionDepth: number;
+  coordinationOverhead: number;
+}): number {
+  return (
+    task.numTools * 0.2 +
+    (task.contextLength / 128_000) * 0.3 +
+    task.decisionDepth * 0.3 +
+    task.coordinationOverhead * 0.2
+  );
+}
+
+// ─── Section 22.8: Structured Debate Protocol ─────────────────────────────────
+
+/**
+ * DebateResult — outcome of structured 2-round agent debate.
+ * Use for: budget allocation, strategy pivots, campaign go/no-go decisions.
+ * Do NOT use for: real-time tasks, monitoring, routine operations.
+ *
+ * Expected confidence: 89-92% when 3+ agents reach consensus (vs 73% single-agent).
+ * Source: Microsoft AutoGen Group Chat patterns (2025).
+ */
+export interface DebateResult {
+  recommendation: string; // Final decision recommendation
+  confidence: number; // 0-1 (≥0.9 = all 3 agents agree)
+  dissent: string[]; // Minority views from non-consensus agents
+  reasoning: string; // Synthesized logic from all positions
+  agentsParticipated: string[]; // e.g. ['NOVA', 'CHASE', 'PULSE']
+  rounds: 2; // Always 2-round debate
+  concludedAt: string;
 }
