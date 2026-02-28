@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { registerDiscordEventRouter } from "../../src/plugins/ari-discord-event-router.js";
 import { registerAriPipelinesCommandBridge } from "../../src/plugins/ari-pipelines-command-bridge.js";
 
 /**
@@ -27,6 +28,28 @@ const plugin = {
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi): void {
     registerAriPipelinesCommandBridge(api);
+
+    // Wire EventBus events → Discord channel routing via HTTP endpoint.
+    // ARI services POST to POST /ari/discord-event to push notifications.
+    const channelIds = {
+      main: process.env["ARI_DISCORD_CHANNEL_MAIN"] ?? "",
+      deep: process.env["ARI_DISCORD_CHANNEL_DEEP"] ?? "",
+      marketAlerts: process.env["ARI_DISCORD_CHANNEL_MARKET_ALERTS"] ?? "",
+      pokemonMarket: process.env["ARI_DISCORD_CHANNEL_POKEMON"] ?? "",
+      researchDigest: process.env["ARI_DISCORD_CHANNEL_RESEARCH"] ?? "",
+      systemStatus: process.env["ARI_DISCORD_CHANNEL_SYSTEM_STATUS"] ?? "",
+      opsDashboard: process.env["ARI_DISCORD_CHANNEL_OPS_DASHBOARD"] ?? "",
+      videoQueue: process.env["ARI_DISCORD_CHANNEL_VIDEO_QUEUE"] ?? "",
+      outreachQueue: process.env["ARI_DISCORD_CHANNEL_OUTREACH_QUEUE"] ?? "",
+    };
+
+    const anyConfigured = Object.values(channelIds).some((v) => v.length > 0);
+    if (anyConfigured) {
+      registerDiscordEventRouter(api, { channelIds });
+    } else {
+      api.logger.warn("[ari-autonomous] no Discord channel IDs configured — event router disabled");
+    }
+
     // Phase 3: api.registerService({ id: 'watchdog', start: initSelfHealing })
     // Phase 3: api.registerService({ id: 'intelligence', start: initIntelligenceScanner })
   },

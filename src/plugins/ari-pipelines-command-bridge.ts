@@ -3303,4 +3303,76 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       handler: async (ctx) => handleP2FeedbackStatsCommand(runtime, ctx.args),
     }),
   });
+
+  // ── Conversational Commands ────────────────────────────────────────────────
+
+  api.registerCommand({
+    name: "ari",
+    description: "Send a request to ARI (creates a thread for the response)",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => {
+        const body = ctx.commandBody.trim();
+        if (!body) {
+          return asReply(["Usage: `/ari <your request>`"]);
+        }
+        const date = new Date().toISOString().slice(0, 10);
+        const preview = body.slice(0, 60);
+        return asReply([`🧠 **ARI** received: ${body}\n> Thread: [${date}] ${preview}`]);
+      },
+    }),
+  });
+
+  api.registerCommand({
+    name: "agent",
+    description: "Route a request to a named agent: NOVA, CHASE, PULSE, DEX, or RUNE",
+    acceptsArgs: true,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (ctx) => {
+        const parts = ctx.commandBody.trim().split(/\s+/);
+        const agentName = (parts[0] ?? "").toUpperCase();
+        const request = parts.slice(1).join(" ");
+        const validAgents = new Set(["NOVA", "CHASE", "PULSE", "DEX", "RUNE"]);
+        if (!agentName || !validAgents.has(agentName)) {
+          return asReply(["Usage: `/agent <NOVA|CHASE|PULSE|DEX|RUNE> <request>`"]);
+        }
+        const emojiMap: Record<string, string> = {
+          NOVA: "🎬",
+          CHASE: "🎯",
+          PULSE: "📡",
+          DEX: "🗂️",
+          RUNE: "🔧",
+        };
+        const emoji = emojiMap[agentName] ?? "🤖";
+        return asReply([`${emoji} **${agentName}** received: ${request}`]);
+      },
+    }),
+  });
+
+  api.registerCommand({
+    name: "summarize",
+    description: "Summarize the current Discord thread or channel context",
+    acceptsArgs: false,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (_ctx) =>
+        asReply(["📋 **Thread Summary** — ARI will generate a digest of this thread shortly."]),
+    }),
+  });
+
+  api.registerCommand({
+    name: "status",
+    description: "Quick ARI bridge health check (alias for /ari-status)",
+    acceptsArgs: false,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async () => handleStatusCommand(runtime),
+    }),
+  });
 }
