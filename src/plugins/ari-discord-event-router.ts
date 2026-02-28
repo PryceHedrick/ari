@@ -157,7 +157,7 @@ export function registerDiscordEventRouter(
 
       try {
         const text = route.format(payload);
-        await sendMessageDiscord(channelId, text);
+        await sendMessageDiscord(`channel:${channelId}`, text);
         api.logger.info(
           `[ari-discord-event-router] dispatched ${eventName} → channel ${channelId}`,
         );
