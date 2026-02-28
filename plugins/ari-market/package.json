@@ -16,6 +16,7 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "id": "ari-market"
   }
 }

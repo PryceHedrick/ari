@@ -1,9 +1,9 @@
 {
   "name": "@ari/autonomous",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI autonomous operations — self-healing watchdog + intelligence scanner",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "openclaw": "workspace:*"
   },
@@ -13,6 +13,7 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "id": "ari-autonomous"
   }
 }

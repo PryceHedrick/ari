@@ -1,9 +1,9 @@
 {
   "name": "@ari/voice",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI voice — ElevenLabs TTS (eleven_turbo_v2_5) + Whisper STT",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "openclaw": "workspace:*"
   },
@@ -13,6 +13,7 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "id": "ari-voice"
   }
 }

@@ -1,9 +1,9 @@
 {
   "name": "@ari/scheduler",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI scheduler — 18 cron tasks in 3 execution windows (Eastern Time)",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "openclaw": "workspace:*"
   },
@@ -13,6 +13,7 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "id": "ari-scheduler"
   }
 }

@@ -1,9 +1,9 @@
 {
   "name": "@ari/ai",
   "version": "1.0.0",
+  "private": true,
   "description": "ARI AI orchestration — ValueScorer RL model routing + OpenRouter gateway",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "openclaw": "workspace:*"
   },
@@ -13,6 +13,7 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "id": "ari-ai"
   }
 }

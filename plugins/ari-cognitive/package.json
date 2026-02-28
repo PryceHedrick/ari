@@ -13,6 +13,7 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "id": "ari-cognitive"
   }
 }
