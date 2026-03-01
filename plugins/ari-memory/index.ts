@@ -1,3 +1,5 @@
+import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { ariBus } from "../ari-shared/src/event-bus.js";
@@ -6,6 +8,14 @@ import { cleanupExpiredCronState, getCronStateStats } from "./src/cron-state.js"
 import { saveMemory, queryMemories, getMemoryStats } from "./src/memory-db.js";
 import { searchMemories, indexMemory, getIndexStats } from "./src/tfidf-search.js";
 import { loadWorkspaceContext } from "./src/workspace-context.js";
+
+// Wraps plain payload into AgentToolResult format required by AnyAgentTool
+function jsonResult(payload: unknown): AgentToolResult<unknown> {
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    details: payload,
+  };
+}
 
 /**
  * ARI Memory Plugin — Provenance-tracked knowledge persistence.
@@ -31,30 +41,25 @@ const plugin = {
   register(api: OpenClawPluginApi): void {
     // ── Tool: Search memory ──────────────────────────────────────────────────
     api.registerTool?.({
-      id: "ari_memory_search",
-      name: "Search ARI Memory",
+      name: "ari_memory_search",
+      label: "Search ARI Memory",
       description: "TF-IDF search across ARI knowledge base (memories + bookmarks)",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          query: { type: "string", description: "Search query" },
-          limit: { type: "number", description: "Max results (default 10)" },
-          domain: {
-            type: "string",
-            description: "Filter by domain (patterns, decisions, fixes, docs)",
-          },
-        },
-        required: ["query"],
-      },
-      handler: async (input: Record<string, unknown>) => {
-        const { query, limit, domain } = input as {
+      parameters: Type.Object({
+        query: Type.String({ description: "Search query" }),
+        limit: Type.Optional(Type.Number({ description: "Max results (default 10)" })),
+        domain: Type.Optional(
+          Type.String({ description: "Filter by domain (patterns, decisions, fixes, docs)" }),
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const { query, limit, domain } = params as {
           query: string;
           limit?: number;
           domain?: string;
         };
         const results = searchMemories(query, limit ?? 10);
         const filtered = domain ? results.filter((r) => r.domain === domain) : results;
-        return {
+        return jsonResult({
           results: filtered.map((r) => ({
             id: r.id,
             title: r.title,
@@ -66,54 +71,47 @@ const plugin = {
             confidence: r.confidence,
           })),
           count: filtered.length,
-        };
+        });
       },
     });
 
     // ── Tool: Save bookmark ──────────────────────────────────────────────────
     api.registerTool?.({
-      id: "ari_save_bookmark",
-      name: "Save Bookmark",
+      name: "ari_save_bookmark",
+      label: "Save Bookmark",
       description: "Save a URL to ARI knowledge base with optional summary and tags",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          url: { type: "string", description: "URL to save" },
-          title: { type: "string", description: "Page title" },
-          summary: { type: "string", description: "Content summary (will be indexed)" },
-          tags: { type: "array", items: { type: "string" }, description: "Tags" },
-          domain: { type: "string", description: "Knowledge domain" },
-        },
-        required: ["url"],
-      },
-      handler: async (input: Record<string, unknown>) => {
-        return processBookmark(input as Parameters<typeof processBookmark>[0]);
+      parameters: Type.Object({
+        url: Type.String({ description: "URL to save" }),
+        title: Type.Optional(Type.String({ description: "Page title" })),
+        summary: Type.Optional(Type.String({ description: "Content summary (will be indexed)" })),
+        tags: Type.Optional(Type.Array(Type.String(), { description: "Tags" })),
+        domain: Type.Optional(Type.String({ description: "Knowledge domain" })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const result = await processBookmark(params as Parameters<typeof processBookmark>[0]);
+        return jsonResult(result);
       },
     });
 
     // ── Tool: Load workspace context ─────────────────────────────────────────
     api.registerTool?.({
-      id: "ari_workspace_load",
-      name: "Load Workspace Context",
+      name: "ari_workspace_load",
+      label: "Load Workspace Context",
       description:
         "Load workspace files (SOUL, USER, HEARTBEAT, GOALS, AGENTS, MEMORY, RECOVERY) into context. ZOE plane = all 7 files. CODEX plane (RUNE) = AGENTS.md only.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          agentName: {
-            type: "string",
-            description: "Agent name for SOUL file loading (ZOE plane only)",
-          },
-          plane: {
-            type: "string",
-            enum: ["zoe", "codex"],
+      parameters: Type.Object({
+        agentName: Type.Optional(
+          Type.String({ description: "Agent name for SOUL file loading (ZOE plane only)" }),
+        ),
+        plane: Type.Optional(
+          Type.String({
             description:
               "Context isolation plane: 'zoe' = full business context, 'codex' = engineering only",
-          },
-        },
-      },
-      handler: async (input: Record<string, unknown>) => {
-        const { agentName, plane } = input as { agentName?: string; plane?: "zoe" | "codex" };
+          }),
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const { agentName, plane } = params as { agentName?: string; plane?: "zoe" | "codex" };
 
         // CODEX enforcement: RUNE always gets codex plane regardless of request
         const CODEX_AGENTS = ["rune", "RUNE"];
@@ -128,7 +126,8 @@ const plugin = {
         }
 
         const effectivePlane: "zoe" | "codex" = isCodexAgent ? "codex" : (plane ?? "zoe");
-        return loadWorkspaceContext(agentName, effectivePlane);
+        const result = loadWorkspaceContext(agentName, effectivePlane);
+        return jsonResult(result);
       },
     });
 
