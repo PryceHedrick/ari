@@ -33,6 +33,7 @@
       "ari-autonomous",
       "ari-notion",
       "ari-voice",
+      "ari-ops",
     ],
     entries: {
       "ari-kernel": { enabled: true },
@@ -118,6 +119,14 @@
       },
       "ari-notion": { enabled: true },
       "ari-voice": { enabled: true },
+      "ari-ops": {
+        enabled: true,
+        config: {
+          tracing: { enabled: true, retentionDays: 30, forensicMode: false },
+          policy: { enabled: true, defaultDeny: true, internalPluginsExempt: true },
+          killSwitch: { skills: false, network: false },
+        },
+      },
     },
   },
 

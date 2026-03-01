@@ -1,0 +1,24 @@
+version: 1
+tiers:
+  quarantine:
+    description: "Default. Not reviewed. Executable code NOT allowed."
+    canExecute: false
+
+  community:
+    description: "Basic review. Known publisher. No high-risk ops."
+    requirements: [publisher_known, no_shell_exec, no_wildcard_network]
+    canExecute: true
+
+  verified:
+    description: "Full static analysis + hash pinned."
+    requirements: [hash_pinned, static_analysis_pass, permissions_declared]
+    canExecute: true
+
+  trusted:
+    description: "Verified + 7d production soak + reviewer sign-off."
+    requirements: [verified, production_soak_7d, reviewer_sign_off]
+    canExecute: true
+
+  internal:
+    description: "Core ARI plugins. Always exempt from policy checks."
+    canExecute: true

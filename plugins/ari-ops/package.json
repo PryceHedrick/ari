@@ -1,0 +1,24 @@
+{
+  "name": "@ari/ops",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ARI Ops — observability, tracing, policy engine, kill switch, Discord AgentOps commands",
+  "type": "module",
+  "dependencies": {
+    "better-sqlite3": "12.6.2",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "openclaw": "workspace:*"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.26"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "id": "ari-ops"
+  }
+}

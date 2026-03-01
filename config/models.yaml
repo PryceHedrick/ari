@@ -1,0 +1,64 @@
+models:
+  - id: claude-sonnet-4-6
+    provider: anthropic
+    contextWindow: 200000
+    costTier: medium
+    strengths: [reasoning, code, writing]
+    usedBy: [ARI, NOVA, CHASE, RUNE]
+
+  - id: claude-opus-4-6
+    provider: anthropic
+    contextWindow: 200000
+    costTier: premium
+    strengths: [reasoning, complex-tasks]
+    usedBy: [ARI, NOVA, CHASE]
+
+  - id: claude-haiku-4-5-20251001
+    provider: anthropic
+    contextWindow: 200000
+    costTier: cheap
+    strengths: [speed, simple-tasks]
+    usedBy: [ARI, NOVA, CHASE]
+
+  - id: gemini-2.5-flash
+    provider: google
+    contextWindow: 1000000
+    costTier: cheap
+    strengths: [long-context, multimodal]
+    usedBy: [PULSE]
+
+  - id: grok-3
+    provider: xai
+    contextWindow: 131072
+    costTier: medium
+    strengths: [x-platform, real-time]
+    usedBy: [PULSE]
+
+  - id: grok-3-mini
+    provider: xai
+    contextWindow: 131072
+    costTier: cheap
+    strengths: [x-sentiment]
+    usedBy: [PULSE]
+
+  - id: sonar-pro
+    provider: perplexity
+    contextWindow: 200000
+    costTier: medium
+    strengths: [web-search, research]
+    usedBy: [DEX]
+
+  # RUNE tiers handled via env: RUNE_CODEX_AVAILABLE / OPENAI_API_KEY / fallback
+  - id: openai-codex
+    provider: openai-codex
+    contextWindow: 100000
+    costTier: medium
+    strengths: [code, engineering]
+    usedBy: [RUNE]
+
+  - id: openai-default
+    provider: openai
+    contextWindow: 128000
+    costTier: medium
+    strengths: [code, reasoning]
+    usedBy: [RUNE]

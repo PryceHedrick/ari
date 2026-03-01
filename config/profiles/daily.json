@@ -1,0 +1,9 @@
+{
+  "name": "daily",
+  "description": "Daily profile: lightweight tracing, policy on, 30-day retention",
+  "ari-ops": {
+    "tracing": { "enabled": true, "retentionDays": 30, "forensicMode": false },
+    "policy": { "enabled": true, "defaultDeny": true, "internalPluginsExempt": true },
+    "killSwitch": { "skills": false, "network": false }
+  }
+}

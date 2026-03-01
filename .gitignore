@@ -23,6 +23,10 @@ packages/dashboard-next/out/
 # Mise configuration files
 mise.toml
 
+# ARI Ops generated data (skill audit outputs, snapshots tracked separately)
+data/clawshub_risk_report.json
+data/skill_roadmap.json
+
 # Android build artifacts
 apps/android/.gradle/
 apps/android/app/build/

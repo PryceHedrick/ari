@@ -1,0 +1,9 @@
+{
+  "name": "forensic",
+  "description": "Forensic profile: maximum tracing detail, strict policy, 180-day retention. Requires explicit operator approval to enable.",
+  "ari-ops": {
+    "tracing": { "enabled": true, "retentionDays": 180, "forensicMode": true },
+    "policy": { "enabled": true, "defaultDeny": true, "internalPluginsExempt": true },
+    "killSwitch": { "skills": false, "network": false }
+  }
+}

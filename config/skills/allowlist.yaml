@@ -1,0 +1,5 @@
+version: 1
+note: >
+  No marketplace skills installed. Executable marketplace code requires
+  out-of-process sandboxed runner (not yet implemented). See docs/ops/security.md.
+skills: []

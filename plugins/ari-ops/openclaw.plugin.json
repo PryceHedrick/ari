@@ -1,0 +1,10 @@
+{
+  "id": "ari-ops",
+  "name": "ari-ops",
+  "description": "ari-ops plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

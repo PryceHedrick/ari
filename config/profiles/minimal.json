@@ -1,0 +1,9 @@
+{
+  "name": "minimal",
+  "description": "Minimal profile: no tracing, no policy enforcement, core plugins only",
+  "ari-ops": {
+    "tracing": { "enabled": false, "retentionDays": 7, "forensicMode": false },
+    "policy": { "enabled": false, "defaultDeny": false, "internalPluginsExempt": true },
+    "killSwitch": { "skills": false, "network": false }
+  }
+}

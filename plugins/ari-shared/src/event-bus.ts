@@ -50,6 +50,10 @@ export interface AriBusEvents {
   "discord:voice:join": [payload: Record<string, unknown>];
   "discord:voice:speak": [payload: Record<string, unknown>];
   "discord:voice:leave": [payload: Record<string, unknown>];
+  // Ops tracing + policy
+  "ari:trace:event": [payload: Record<string, unknown>];
+  "ari:ops:kill_switch": [payload: { scope: string; reason: string; ts: string }];
+  "ari:security:skill_hash_mismatch": [payload: { slug: string; toolName: string; ts: string }];
 }
 
 class AriBus extends EventEmitter {

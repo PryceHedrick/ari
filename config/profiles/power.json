@@ -1,0 +1,9 @@
+{
+  "name": "power",
+  "description": "Power profile: full tracing, strict policy, 90-day retention",
+  "ari-ops": {
+    "tracing": { "enabled": true, "retentionDays": 90, "forensicMode": false },
+    "policy": { "enabled": true, "defaultDeny": true, "internalPluginsExempt": true },
+    "killSwitch": { "skills": false, "network": false }
+  }
+}

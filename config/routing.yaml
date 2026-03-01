@@ -1,0 +1,105 @@
+version: 1
+rules:
+  - match:
+      taskType: x-sentiment
+    route:
+      agent: PULSE
+      provider: xai
+      model: grok-3-mini
+    fallback:
+      provider: anthropic
+      model: claude-haiku-4-5-20251001
+
+  - match:
+      taskType: web-research
+    route:
+      agent: DEX
+      provider: perplexity
+      model: sonar-pro
+    fallback:
+      provider: anthropic
+      model: claude-haiku-4-5-20251001
+
+  - match:
+      agentName: PULSE
+    route:
+      provider: google
+      model: gemini-2.5-flash
+    fallback:
+      provider: anthropic
+      model: claude-haiku-4-5-20251001
+
+  - match:
+      agentName: DEX
+    route:
+      provider: perplexity
+      model: sonar-pro
+    fallback:
+      provider: anthropic
+      model: claude-haiku-4-5-20251001
+
+  - match:
+      agentName: ARI
+      stakesGte: 85
+    route:
+      provider: anthropic
+      model: claude-opus-4-6
+
+  - match:
+      agentName: ARI
+      complexityGte: 80
+    route:
+      provider: anthropic
+      model: claude-opus-4-6
+
+  - match:
+      agentName: ARI
+    route:
+      provider: anthropic
+      model: claude-sonnet-4-6
+
+  - match:
+      agentName: NOVA
+      stakesGte: 85
+    route:
+      provider: anthropic
+      model: claude-opus-4-6
+
+  - match:
+      agentName: NOVA
+    route:
+      provider: anthropic
+      model: claude-sonnet-4-6
+
+  - match:
+      agentName: CHASE
+      stakesGte: 85
+    route:
+      provider: anthropic
+      model: claude-opus-4-6
+
+  - match:
+      agentName: CHASE
+    route:
+      provider: anthropic
+      model: claude-sonnet-4-6
+
+  - match:
+      agentName: RUNE
+      env: RUNE_CODEX_AVAILABLE
+    route:
+      provider: openai-codex
+      model: openai-codex
+
+  - match:
+      agentName: RUNE
+      env: OPENAI_API_KEY
+    route:
+      provider: openai
+      model: openai-default
+
+  - match:
+      agentName: RUNE
+    route:
+      provider: anthropic
+      model: claude-sonnet-4-6

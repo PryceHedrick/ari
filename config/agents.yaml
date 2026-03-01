@@ -1,0 +1,63 @@
+agents:
+  - name: ARI
+    emoji: "🧠"
+    plane: zoe
+    role: Primary orchestrator + daily ops
+    modelPolicy:
+      default: claude-sonnet-4-6
+      highStakes: claude-opus-4-6
+    requiredEnv: [ANTHROPIC_API_KEY]
+    workspaceFiles: [SOUL.md, USER.md, GOALS.md, AGENTS.md, RECOVERY.md, MEMORY.md, HEARTBEAT.md]
+
+  - name: NOVA
+    emoji: "🌟"
+    plane: zoe
+    role: Business intelligence + market analysis
+    modelPolicy:
+      default: claude-sonnet-4-6
+      highStakes: claude-opus-4-6
+    requiredEnv: [ANTHROPIC_API_KEY]
+
+  - name: CHASE
+    emoji: "🎯"
+    plane: zoe
+    role: Lead generation + outreach
+    modelPolicy:
+      default: claude-sonnet-4-6
+      highStakes: claude-opus-4-6
+    requiredEnv: [ANTHROPIC_API_KEY]
+
+  - name: PULSE
+    emoji: "📡"
+    plane: zoe
+    role: Market monitoring + social signals
+    modelPolicy:
+      default: gemini-2.5-flash
+      xSentiment: grok-3-mini
+    requiredEnv: [GEMINI_API_KEY]
+    optionalEnv: [XAI_API_KEY]
+    fallback:
+      provider: anthropic
+      model: claude-haiku-4-5-20251001
+
+  - name: DEX
+    emoji: "🔭"
+    plane: zoe
+    role: Deep research + web intel
+    modelPolicy:
+      default: sonar-pro
+    requiredEnv: [PERPLEXITY_API_KEY]
+    fallback:
+      provider: anthropic
+      model: claude-haiku-4-5-20251001
+
+  - name: RUNE
+    emoji: "🔮"
+    plane: codex
+    role: Engineering + code tasks
+    modelPolicy:
+      tier1: openai-codex
+      tier2: openai-default
+      tier3: claude-sonnet-4-6
+    requiredEnv: []
+    optionalEnv: [OPENAI_API_KEY]

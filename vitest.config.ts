@@ -41,6 +41,8 @@ export default defineConfig({
       "ui/src/ui/controllers/agents.test.ts",
       "plugins/**/*.test.ts",
       "scripts/__tests__/**/*.test.ts",
+      "scripts/config/**/*.test.ts",
+      "scripts/skill_audit/**/*.test.ts",
     ],
     setupFiles: ["test/setup.ts"],
     exclude: [
