@@ -2,7 +2,7 @@ import type { WatchlistEntry } from "../finance-db.js";
 import { addToWatchlist, removeFromWatchlist, getWatchlist } from "../finance-db.js";
 import { createOrUpdatePlaybook } from "../finance-playbook.js";
 
-const VALID_ASSET_TYPES: WatchlistEntry["asset_type"][] = new Set([
+const VALID_ASSET_TYPES = new Set<WatchlistEntry["asset_type"]>([
   "stock",
   "crypto",
   "etf",
