@@ -21,6 +21,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { ariBus } from "../ari-shared/src/event-bus.js";
 import { handleAgentsCommand } from "./src/commands/agents.js";
+import { handleCostCommand } from "./src/commands/cost.js";
 import { handleDebugCommand } from "./src/commands/debug.js";
 import { handleDoctorCommand } from "./src/commands/doctor.js";
 import { handleRecentCommand } from "./src/commands/recent.js";
@@ -255,6 +256,22 @@ const plugin = {
       acceptsArgs: true,
       requireAuth: true,
       handler: async (ctx) => handleDebugCommand(ctx.args),
+    });
+
+    api.registerCommand({
+      name: "ari-cost",
+      description: "Token usage + latency: /ari-cost [7d|budget]",
+      acceptsArgs: true,
+      requireAuth: true,
+      handler: async (ctx) => handleCostCommand(ctx.args ?? ""),
+    });
+
+    // ── ariBus: budget warning broadcast ────────────────────────────────────
+    ariBus.on("ari:ops:budget_warning", (payload) => {
+      emitSpan({
+        event: "tracer_error",
+        summary: `budget warning: ${payload.pctUsed.toFixed(1)}% of daily token budget used`,
+      });
     });
   },
 };

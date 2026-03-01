@@ -141,6 +141,157 @@ function checkMemoryDb(): CheckResult[] {
   ];
 }
 
+// ── Obsidian checks ───────────────────────────────────────────────────────────
+
+function checkObsidian(): CheckResult[] {
+  const vaultPath =
+    process.env.ARI_OBSIDIAN_VAULT_PATH ?? path.join(homedir(), ".ari", "obsidian-vault");
+  const vaultExists = existsSync(vaultPath);
+  const dbPath = path.join(homedir(), ".ari", "databases", "vault-index.db");
+  const dbExists = existsSync(dbPath);
+
+  const checks: CheckResult[] = [
+    {
+      name: "vault:path",
+      ok: true,
+      detail: vaultPath,
+    },
+    {
+      name: "vault:exists",
+      ok: vaultExists,
+      detail: vaultExists ? "initialized" : "not yet initialized (run /ari-vault-status)",
+    },
+    {
+      name: "vault:index",
+      ok: dbExists,
+      detail: dbExists ? "vault-index.db present" : "not yet indexed",
+    },
+    {
+      name: "vault:enabled",
+      ok: process.env.ARI_OBSIDIAN_ENABLED !== "false",
+      detail:
+        process.env.ARI_OBSIDIAN_ENABLED === "false"
+          ? "disabled (ARI_OBSIDIAN_ENABLED=false)"
+          : "enabled",
+    },
+  ];
+
+  if (vaultExists) {
+    if (dbExists) {
+      try {
+        const Database = require("better-sqlite3") as typeof import("better-sqlite3").default;
+        const db = new Database(dbPath, { readonly: true });
+        const { noteCount } = db.prepare("SELECT COUNT(*) as noteCount FROM notes").get() as {
+          noteCount: number;
+        };
+        const { openLoopCount } = db
+          .prepare("SELECT COUNT(*) as openLoopCount FROM note_tags WHERE tag = 'open-loop'")
+          .get() as { openLoopCount: number };
+        db.close();
+        checks.push({
+          name: "vault:notes",
+          ok: true,
+          detail: `${noteCount} indexed, ${openLoopCount} open loops`,
+        });
+      } catch {
+        checks.push({ name: "vault:notes", ok: false, detail: "index read error" });
+      }
+    }
+  }
+
+  return checks;
+}
+
+// ── Finance checks ────────────────────────────────────────────────────────────
+
+function checkFinance(): CheckResult[] {
+  const dbPath = path.join(homedir(), ".ari", "databases", "finance.db");
+  const dbExists = existsSync(dbPath);
+  const newsProvider =
+    process.env.ARI_FINANCE_NEWS_PROVIDER ?? (process.env.JINA_API_KEY ? "jina" : "rss");
+
+  const checks: CheckResult[] = [
+    {
+      name: "finance:db",
+      ok: dbExists,
+      detail: dbExists ? "finance.db present" : "not yet initialized",
+    },
+    {
+      name: "finance:news_provider",
+      ok: true,
+      detail: `${newsProvider}${newsProvider === "jina" ? " (JINA_API_KEY present)" : ""}`,
+    },
+    {
+      name: "finance:JINA_API_KEY",
+      ok: true,
+      detail: process.env.JINA_API_KEY ? "present (jina provider active)" : "absent (rss fallback)",
+    },
+  ];
+
+  if (dbExists) {
+    try {
+      const Database = require("better-sqlite3") as typeof import("better-sqlite3").default;
+      const db = new Database(dbPath, { readonly: true });
+      const { watchlistCount } = db
+        .prepare("SELECT COUNT(*) as watchlistCount FROM watchlist")
+        .get() as { watchlistCount: number };
+      const { signalCount } = db.prepare("SELECT COUNT(*) as signalCount FROM signals").get() as {
+        signalCount: number;
+      };
+      const lastBrief = db
+        .prepare("SELECT date FROM briefs ORDER BY written_at DESC LIMIT 1")
+        .get() as { date: string } | undefined;
+      db.close();
+      checks.push({
+        name: "finance:watchlist",
+        ok: true,
+        detail: `${watchlistCount} symbols, ${signalCount} signals`,
+      });
+      checks.push({
+        name: "finance:last_brief",
+        ok: true,
+        detail: lastBrief ? `last: ${lastBrief.date}` : "no briefs yet",
+      });
+    } catch {
+      checks.push({ name: "finance:watchlist", ok: false, detail: "DB read error" });
+    }
+  }
+
+  return checks;
+}
+
+// ── Feedback check ────────────────────────────────────────────────────────────
+
+function checkFeedback(): CheckResult[] {
+  const dbPath = path.join(homedir(), ".ari", "databases", "vault-index.db");
+  if (!existsSync(dbPath)) {
+    return [{ name: "feedback:recent", ok: true, detail: "vault not initialized" }];
+  }
+  try {
+    const Database = require("better-sqlite3") as typeof import("better-sqlite3").default;
+    const db = new Database(dbPath, { readonly: true });
+    const since = new Date(Date.now() - 7 * 86400000).toISOString();
+    const { good } = db
+      .prepare("SELECT COUNT(*) as good FROM feedback WHERE rating = 'good' AND ts > ?")
+      .get(since) as { good: number };
+    const { bad } = db
+      .prepare("SELECT COUNT(*) as bad FROM feedback WHERE rating = 'bad' AND ts > ?")
+      .get(since) as { bad: number };
+    db.close();
+    const total = good + bad;
+    const ratio = total > 0 ? `${((good / total) * 100).toFixed(0)}% positive` : "no feedback";
+    return [
+      {
+        name: "feedback:recent",
+        ok: true,
+        detail: `7d: ${good} good / ${bad} bad (${ratio})`,
+      },
+    ];
+  } catch {
+    return [{ name: "feedback:recent", ok: false, detail: "feedback read error" }];
+  }
+}
+
 // ── Gateway probe (optional, async) ──────────────────────────────────────────
 
 export async function probeGateway(port = 3141): Promise<CheckResult> {
@@ -171,6 +322,9 @@ export async function runDoctor(opts?: { probeGw?: boolean }): Promise<DoctorRep
     ...checkKillSwitch(),
     ...checkConfigFiles(),
     ...checkMemoryDb(),
+    ...checkObsidian(),
+    ...checkFinance(),
+    ...checkFeedback(),
   ];
 
   if (opts?.probeGw) {
