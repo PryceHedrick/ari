@@ -28,11 +28,17 @@ ok "remote matches $CANONICAL_SLUG"
 ok "dist entry exists"
 
 # 4. Port conflict check (only fail if non-canonical process holds the port)
+# Note: openclaw-gateway sets process.title — ps command= shows "openclaw-gateway" not the full path.
+# Instead, check the process's cwd (via lsof) and open files to confirm canonical ownership.
 EXISTING_PID=$(lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | awk 'NR==2{print $2}' || echo "")
 if [ -n "$EXISTING_PID" ]; then
-  EXISTING_CMD=$(ps -p "$EXISTING_PID" -o command= 2>/dev/null || echo "unknown")
-  if ! echo "$EXISTING_CMD" | grep -q "$CANONICAL_DIR"; then
-    fail "Port $PORT bound by non-canonical process (PID $EXISTING_PID): $EXISTING_CMD"
+  # Try cwd first (reliable on macOS)
+  EXISTING_CWD=$(lsof -p "$EXISTING_PID" 2>/dev/null | awk '/cwd/{print $NF}' | head -1 || echo "")
+  # Fallback: check if canonical dir appears in any open file
+  EXISTING_FILES=$(lsof -p "$EXISTING_PID" 2>/dev/null | grep -c "$CANONICAL_DIR" || echo "0")
+  if [ -z "$EXISTING_CWD" ] || (! echo "$EXISTING_CWD" | grep -q "$CANONICAL_DIR" && [ "$EXISTING_FILES" -eq 0 ]); then
+    EXISTING_CMD=$(ps -p "$EXISTING_PID" -o command= 2>/dev/null || echo "unknown")
+    fail "Port $PORT bound by non-canonical process (PID $EXISTING_PID, cwd='$EXISTING_CWD'): $EXISTING_CMD"
   fi
 fi
 ok "port $PORT clear or owned by canonical process"
