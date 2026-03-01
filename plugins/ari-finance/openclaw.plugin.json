@@ -1,0 +1,10 @@
+{
+  "id": "ari-finance",
+  "name": "ari-finance",
+  "description": "ari-finance plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}
