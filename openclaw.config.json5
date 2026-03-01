@@ -98,7 +98,7 @@
               "${ARI_DISCORD_CHANNEL_DEEP}",
               "${ARI_DISCORD_CHANNEL_MARKET_ALERTS}",
               "${ARI_DISCORD_CHANNEL_POKEMON}",
-              "${ARI_DISCORD_CHANNEL_PAYTHEPRYCE_CONTENT}",
+              "${ARI_DISCORD_CHANNEL_PAYTHEPRICE}",
               "${ARI_DISCORD_CHANNEL_THUMBNAIL_LAB}",
             ],
             p2ChannelIds: [
@@ -126,6 +126,13 @@
     discord: {
       token: "${DISCORD_BOT_TOKEN}",
       guildId: "${DISCORD_GUILD_ID}",
+      // Allow bot to respond without @mention; restrict to ARI's guild only
+      groupPolicy: "open",
+      guilds: [{
+        id: "${DISCORD_GUILD_ID}",
+        requireMention: false,
+        users: ["${PRYCE_USER_ID}"],
+      }],
     },
   },
 
@@ -144,29 +151,37 @@
 
     definitions: {
       "main": {
-        model: "anthropic/claude-sonnet-4-5",
-        provider: "openrouter",
+        model: "claude-sonnet-4-6",
+        provider: "anthropic",
         contextTokens: 100000,
         timeoutSeconds: 120,
       },
       "deep-analysis": {
-        model: "anthropic/claude-opus-4-6",
-        provider: "openrouter",
+        model: "claude-opus-4-6",
+        provider: "anthropic",
         contextTokens: 200000,
         timeoutSeconds: 600,
         // Pre-process with: bayesian_update, expected_value, detect_bias, synthesize
       },
       "market-monitor": {
-        model: "anthropic/claude-haiku-4-5",
-        provider: "openrouter",
+        model: "claude-haiku-4-5-20251001",
+        provider: "anthropic",
         contextTokens: 32000,
         timeoutSeconds: 30,
       },
       "growth-pod": {
         // Model varies by channel — set per-routing entry if needed
-        model: "anthropic/claude-sonnet-4-5",
-        provider: "openrouter",
+        model: "claude-sonnet-4-6",
+        provider: "anthropic",
         contextTokens: 50000,
+        timeoutSeconds: 120,
+      },
+      "code-pod": {
+        // OpenAI Codex subscription (OAuth, no API key required)
+        // Falls back to openai provider if codex auth not active
+        model: "gpt-5.3-codex",
+        provider: "openai-codex",
+        contextTokens: 100000,
         timeoutSeconds: 120,
       },
     },
@@ -175,7 +190,7 @@
   // Cost circuit breaker (ModelExecutionPolicy — Phase 1)
   budget: {
     dailyLimitUsd: "${ARI_DAILY_BUDGET_USD:-2.00}",
-    fallbackModel: "anthropic/claude-haiku-3",
+    fallbackModel: "claude-haiku-4-5-20251001",
     pauseNonEssentialAtPercent: 95,
   },
 
@@ -188,6 +203,7 @@
       "HEARTBEAT.md",
       "AGENTS.md",
       "RECOVERY.md",
+      "GOALS.md",
     ],
   },
 
@@ -199,41 +215,15 @@
   },
 
   // Cron scheduler (ari-scheduler plugin) — all times ET
+  // Canonical task definitions live in plugins/ari-scheduler/index.ts
   scheduler: {
     timezone: "${ARI_TIMEZONE:-America/New_York}",
-    tasks: [
-      // Morning window
-      { id: "pre-fetch-market",      cron: "0 5 * * *",   description: "Pre-fetch market data for 06:30 briefing" },
-      { id: "morning-briefing",      cron: "30 6 * * *",  description: "Morning briefing → Discord" },
-      { id: "portfolio-snapshot",    cron: "0 7 * * *",   description: "Portfolio snapshot" },
-      { id: "news-digest",           cron: "15 7 * * *",  description: "News digest" },
-
-      // Midday window
-      { id: "market-midday",         cron: "0 12 * * 1-5", description: "Midday market check (weekdays)" },
-      { id: "pokemon-price-scan",    cron: "30 12 * * *",  description: "Pokemon TCG price scan" },
-      { id: "leads-pipeline",        cron: "0 14 * * 1-5", description: "Pryceless Solutions lead pipeline" },
-
-      // Evening window
-      { id: "workday-wrap",          cron: "0 16 * * 1-5", description: "Workday wrap summary" },
-      { id: "market-close",          cron: "0 19 * * 1-5", description: "Market close summary" },
-      { id: "x-likes-digest",        cron: "0 20 * * *",   description: "X/Twitter likes digest" },
-      { id: "evening-briefing",      cron: "0 21 * * *",   description: "Evening briefing" },
-      { id: "memory-dedup",          cron: "30 21 * * *",  description: "Knowledge base deduplication" },
-      { id: "daily-backup",          cron: "0 22 * * *",   description: "Daily SQLite + workspace backup" },
-
-      // Background (interval-based)
-      { id: "heartbeat",             cron: "*/30 6-22 * * *", description: "Heartbeat — P0 alerts only" },
-      { id: "memory-consolidation",  cron: "0 * * * *",       description: "Memory consolidation (hourly)" },
-      { id: "cost-audit",            cron: "0 */6 * * *",     description: "Model cost vs. daily budget" },
-      { id: "pokemon-valuation",     cron: "0 9 * * 1",       description: "Pokemon collection valuation (weekly)" },
-      { id: "crm-sync",              cron: "0 10 * * 1",      description: "Pryceless CRM sync (weekly)" },
-    ],
   },
 
   // P0 alert channel routing (heartbeat monitor)
   alerts: {
     p0Channel: "${ARI_DISCORD_CHANNEL_MARKET_ALERTS}",
-    p1Channel: "${ARI_DISCORD_CHANNEL_PAYTHEPRYCE_CONTENT}",
+    p1Channel: "${ARI_DISCORD_CHANNEL_PAYTHEPRICE}",
     systemChannel: "${ARI_DISCORD_CHANNEL_SYSTEM_STATUS}",
     mentionUserId: "${PRYCE_USER_ID}",
   },

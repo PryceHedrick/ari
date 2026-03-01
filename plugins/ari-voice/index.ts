@@ -1,6 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
-import { synthesizeSpeech, buildDiscordVoicePayload } from "./src/tts.js";
+import { synthesizeSpeech } from "./src/tts.js";
 
 /**
  * ARI Voice Plugin — ElevenLabs TTS with model routing + Discord delivery.
@@ -64,14 +64,9 @@ const plugin = {
             api.emit?.("discord:voice:speak", { audioBuffer: result.audioBuffer, format: "ogg" });
             api.emit?.("discord:voice:leave", {});
           } else {
-            // Default: OGG file attachment delivery
-            const embedJson = {
-              content: "🎙️ _ARI morning briefing — voice_",
-            };
-            const payload = buildDiscordVoicePayload(result.audioBuffer, embedJson);
+            // Default: emit raw audio buffer for delivery via sendVoiceMessageDiscord
             api.emit?.("ari:voice:ready", {
-              boundary: payload.boundary,
-              body: payload.body,
+              audioBuffer: result.audioBuffer,
               channel,
               wordCount: result.wordCount,
             });

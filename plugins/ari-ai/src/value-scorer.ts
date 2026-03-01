@@ -4,14 +4,15 @@
  * Routing priority (highest to lowest):
  *   1. CODEX plane → RUNE_PRIMARY_MODEL (engineering context)
  *   2. Named agent → task-type-aware multi-tier routing
- *      ARI:   always Opus 4.6 (orchestration)
+ *      ARI:   Sonnet default; Opus for deep/high-stakes (stakes≥85 or complexity≥80)
+ *      ARI-DEEP: always Opus
  *      NOVA:  outline/brief → Haiku | default → Sonnet | polish/final → Opus
  *      CHASE: discovery/score → Haiku | default → Sonnet | deep/high-stakes → Opus
- *      PULSE: market-news → Perplexity sonar-pro | sentiment → Sonnet | default → Gemini 2.5 Flash
+ *      PULSE: market-news → Perplexity sonar-pro | sentiment → xAI Grok | default → Gemini 2.5 Flash
  *      DEX:   web/changelog → Perplexity sonar-pro | breakthrough → sonar-reasoning-pro
  *             paper-analysis → Haiku+thinking | synthesis → Sonnet | long-doc → Gemini 2.5 Flash
  *             default → Perplexity sonar-pro
- *      RUNE:  RUNE_PRIMARY_MODEL (engineering)
+ *      RUNE:  3-tier: Codex OAuth → OpenAI API → Anthropic Sonnet
  *   3. Engineering task patterns → RUNE_PRIMARY_MODEL
  *   4. Web research patterns → Perplexity tier-aware
  *   5. Long context >100K → Gemini 2.5 Flash overflow
@@ -19,11 +20,16 @@
  *   7. Audio transcription → Whisper
  *   8. Default → Claude ValueScore (complexity+stakes+quality+history)
  *
- * No hard budget caps. Best model for every task.
- * Spend tracked via OpenRouter GET /api/v1/key.
+ * All providers: direct API keys (no OpenRouter proxy).
+ * Spend tracked via per-provider dashboards.
  *
- * Prompt caching (OpenRouter — Anthropic models only):
- *   Named agents (Anthropic models): ttl=1h (~70% cost reduction on stable SOUL+workspace)
+ * Capability fallbacks (applied automatically):
+ *   google absent (GEMINI_API_KEY)   → anthropic claude-sonnet-4-6
+ *   xai absent (XAI_API_KEY)         → anthropic claude-haiku-4-5-20251001
+ *   perplexity absent (PERPLEXITY_API_KEY) → anthropic claude-haiku-4-5-20251001
+ *
+ * Prompt caching (Anthropic models only):
+ *   Named agents (Anthropic): ttl=1h (~70% cost reduction on stable SOUL+workspace)
  *   Other large prompts: ttl=5min (default ephemeral)
  *   Threshold: Opus ≥4096 tokens | Sonnet/Haiku ≥1024 tokens
  */
@@ -46,29 +52,35 @@ export type TaskContext = {
 };
 
 export type ModelRoute = {
-  provider: "openrouter" | "perplexity" | "google" | "openai";
+  provider:
+    | "anthropic"
+    | "openrouter"
+    | "perplexity"
+    | "google"
+    | "openai"
+    | "xai"
+    | "openai-codex";
   model: string;
   reason: string;
   extendedThinking?: boolean;
   thinkingBudget?: number;
 };
 
-// Named agent profiles — default model when no task-type override applies
-const AGENT_PROFILES: Record<string, { model: string; provider: ModelRoute["provider"] }> = {
-  ARI: { model: "anthropic/claude-opus-4-6", provider: "openrouter" },
-  "ARI-DEEP": { model: "anthropic/claude-opus-4-6", provider: "openrouter" }, // ari-deep agent → always Opus
-  NOVA: { model: "anthropic/claude-sonnet-4-6", provider: "openrouter" },
-  CHASE: { model: "anthropic/claude-sonnet-4-6", provider: "openrouter" },
-  PULSE: { model: "google/gemini-2.5-flash", provider: "openrouter" },
-  DEX: { model: "perplexity/sonar-pro", provider: "perplexity" },
-  RUNE: {
-    model: process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6",
-    provider: "openrouter",
-  },
+// Named agent profiles — default model when no task-type override applies.
+// Note: RUNE uses the 3-tier fallback in routeToModel(); profile is documentation only.
+export const AGENT_PROFILES: Record<string, { model: string; provider: ModelRoute["provider"] }> = {
+  ARI: { model: "claude-sonnet-4-6", provider: "anthropic" }, // Sonnet default; Opus escalates for high-stakes
+  "ARI-DEEP": { model: "claude-opus-4-6", provider: "anthropic" }, // always Opus
+  NOVA: { model: "claude-sonnet-4-6", provider: "anthropic" },
+  CHASE: { model: "claude-sonnet-4-6", provider: "anthropic" },
+  PULSE: { model: "gemini-2.5-flash", provider: "google" }, // 1M context, built-in thinking
+  DEX: { model: "perplexity/sonar-pro", provider: "perplexity" }, // keep prefix — perplexity strips it
+  RUNE: { model: "gpt-5.3-codex", provider: "openai-codex" }, // 3-tier at runtime; profile is fallback docs
 };
 
-// Perplexity tier-aware routing — real-time web search native to model
-const PERPLEXITY_MODELS: Record<ResearchDepth, string> = {
+// Perplexity tier-aware routing — real-time web search native to model.
+// IMPORTANT: keep "perplexity/" prefix — OpenClaw's perplexity provider strips it when forwarding.
+export const PERPLEXITY_MODELS: Record<ResearchDepth, string> = {
   deep: "perplexity/sonar-deep-research", // DEX weekly digest — deepest synthesis
   reasoning: "perplexity/sonar-reasoning-pro", // DEX breakthrough detection, CHASE deep qualify
   pro: "perplexity/sonar-pro", // PULSE news, DEX web research, CHASE lead audit
@@ -162,31 +174,100 @@ function scoreToTier(score: number): ModelTier {
 }
 
 const TIER_MODEL_MAP: Record<ModelTier, string> = {
-  opus: "anthropic/claude-opus-4-6",
-  sonnet: "anthropic/claude-sonnet-4-6",
-  haiku: "anthropic/claude-haiku-4-5",
+  opus: "claude-opus-4-6",
+  sonnet: "claude-sonnet-4-6",
+  haiku: "claude-haiku-4-5",
 };
 
-function validateRuneModel(model: string): void {
-  if (!model.startsWith("anthropic/") && !model.startsWith("openai/")) {
-    throw new Error(
-      `[ARI] Invalid RUNE_PRIMARY_MODEL format: "${model}". ` +
-        'Must be "anthropic/..." or "openai/..." (e.g., "openai/codex-5.3" or "anthropic/claude-sonnet-4-6")',
-    );
+/**
+ * Parse RUNE_PRIMARY_MODEL env var (format: "provider/model-name") into provider + model.
+ * Falls back to anthropic/claude-sonnet-4-6 for unrecognized formats.
+ */
+function parseRuneModelEnv(modelEnv: string): {
+  provider: ModelRoute["provider"];
+  modelName: string;
+} {
+  const slashIdx = modelEnv.indexOf("/");
+  if (slashIdx < 0) {
+    // No prefix — assume anthropic (backward compat)
+    return { provider: "anthropic", modelName: modelEnv };
   }
+  const prefix = modelEnv.slice(0, slashIdx);
+  const modelName = modelEnv.slice(slashIdx + 1);
+  switch (prefix) {
+    case "openai":
+      return { provider: "openai", modelName };
+    case "openai-codex":
+      return { provider: "openai-codex", modelName };
+    case "anthropic":
+      return { provider: "anthropic", modelName };
+    case "google":
+      return { provider: "google", modelName };
+    case "perplexity":
+      return { provider: "perplexity", modelName: modelEnv }; // keep full for perplexity
+    default:
+      return { provider: "anthropic", modelName: modelEnv };
+  }
+}
+
+/**
+ * Detect Codex OAuth subscription at runtime.
+ * Primary: RUNE_CODEX_AVAILABLE=true env var (for testing + explicit override).
+ * Future: will query auth profile store when importable from plugin context.
+ */
+function hasCodexOAuth(): boolean {
+  return process.env.RUNE_CODEX_AVAILABLE === "true";
+}
+
+/**
+ * Apply capability fallbacks when a provider's key is absent.
+ * Never logs or throws — silently degrades to next available provider.
+ */
+function applyCapabilityFallbacks(route: ModelRoute): ModelRoute {
+  if (route.provider === "google" && !process.env.GEMINI_API_KEY?.trim()) {
+    return {
+      ...route,
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      reason: `${route.reason} [fallback: GEMINI_API_KEY absent → anthropic/sonnet]`,
+    };
+  }
+  if (route.provider === "xai" && !process.env.XAI_API_KEY?.trim()) {
+    return {
+      ...route,
+      provider: "anthropic",
+      model: "claude-haiku-4-5-20251001",
+      reason: `${route.reason} [fallback: XAI_API_KEY absent → anthropic/haiku]`,
+    };
+  }
+  if (route.provider === "perplexity" && !process.env.PERPLEXITY_API_KEY?.trim()) {
+    return {
+      ...route,
+      provider: "anthropic",
+      model: "claude-haiku-4-5-20251001",
+      reason: `${route.reason} [fallback: PERPLEXITY_API_KEY absent → anthropic/haiku]`,
+    };
+  }
+  return route;
 }
 
 /**
  * Route a task to the best model.
  * Priority: CODEX → named agent (task-type-aware) → engineering → research → long-context → ValueScore
+ * All routes pass through applyCapabilityFallbacks before returning.
  */
 export function routeToModel(ctx: TaskContext): ModelRoute {
+  return applyCapabilityFallbacks(resolveModel(ctx));
+}
+
+function resolveModel(ctx: TaskContext): ModelRoute {
   // 0. CODEX plane fast-path — always routes to RUNE_PRIMARY_MODEL
   if (ctx.plane === "codex") {
-    const codexModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
+    const runeEnv = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
+    const { provider, modelName } = parseRuneModelEnv(runeEnv);
     return {
-      provider: "openrouter",
-      model: codexModel,
+      provider,
+      model: modelName,
       reason: "CODEX plane → RUNE primary model (engineering)",
     };
   }
@@ -196,8 +277,29 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
     const name = ctx.agentName.toUpperCase();
     const profile = AGENT_PROFILES[name];
     if (profile) {
-      // ── ARI 🧠 ────────────────────────────────────────────────────────────────
-      // Always Opus. No task-type downgrades. Orchestration demands maximum capability.
+      // ── ARI 🧠 / ARI-DEEP ────────────────────────────────────────────────────
+      if (name === "ARI" || name === "ARI-DEEP") {
+        if (name === "ARI-DEEP") {
+          return {
+            provider: "anthropic",
+            model: "claude-opus-4-6",
+            reason: "ARI-DEEP → always Opus (deep analysis mode)",
+          };
+        }
+        // ARI default: Sonnet; escalate to Opus for high-stakes / deep / complex tasks
+        const isDeepMode = ctx.taskType === "deep" || ctx.taskType === "deep-analysis";
+        const escalate =
+          isDeepMode ||
+          (ctx.stakes !== undefined && ctx.stakes >= 85) ||
+          (ctx.complexity !== undefined && ctx.complexity >= 80);
+        return {
+          provider: "anthropic",
+          model: escalate ? "claude-opus-4-6" : "claude-sonnet-4-6",
+          reason: escalate
+            ? "ARI high-stakes/deep → Opus (orchestration, quality-critical)"
+            : "ARI routine → Sonnet (cost-efficient default)",
+        };
+      }
 
       // ── NOVA 🎬 ──────────────────────────────────────────────────────────────
       if (name === "NOVA") {
@@ -209,8 +311,8 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
           ctx.taskType === "market-ingest"
         ) {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-haiku-4-5",
+            provider: "anthropic",
+            model: "claude-haiku-4-5",
             reason: "NOVA draft/brief task → Haiku (fast, disposable output)",
           };
         }
@@ -221,9 +323,17 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
           ctx.taskType === "quality-review"
         ) {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-opus-4-6",
+            provider: "anthropic",
+            model: "claude-opus-4-6",
             reason: "NOVA final polish → Opus (quality-critical, Pryce-facing output)",
+          };
+        }
+        // High-stakes NOVA → Opus
+        if (ctx.stakes !== undefined && ctx.stakes >= 85) {
+          return {
+            provider: "anthropic",
+            model: "claude-opus-4-6",
+            reason: "NOVA high-stakes → Opus (quality-critical output)",
           };
         }
         // Default NOVA → Sonnet (script generation, evidence synthesis)
@@ -238,8 +348,8 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
           ctx.taskType === "audit-triage"
         ) {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-haiku-4-5",
+            provider: "anthropic",
+            model: "claude-haiku-4-5",
             reason: "CHASE discovery/triage → Haiku (high-volume, fast scoring)",
           };
         }
@@ -254,8 +364,8 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
         // Deep qualification + high-stakes → Opus (P2 revenue on the line)
         if (ctx.researchDepth === "deep" || (ctx.stakes !== undefined && ctx.stakes >= 85)) {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-opus-4-6",
+            provider: "anthropic",
+            model: "claude-opus-4-6",
             reason: "CHASE deep qualify → Opus (high-stakes lead, P2 revenue path)",
           };
         }
@@ -272,13 +382,13 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
           ctx.stakes >= 85
         ) {
           return {
-            provider: "openrouter",
-            model: "x-ai/grok-3",
+            provider: "xai",
+            model: "grok-3",
             reason:
               "PULSE high-stakes X sentiment → Grok 3 (maximum X data quality, financial signal)",
           };
         }
-        // X/Twitter social sentiment → Grok 3 Mini (ONLY model with native live X data, $0.30/M)
+        // X/Twitter social sentiment → Grok 3 Mini (native live X data, $0.30/M)
         // Unique: real-time X posts/trends baked into inference, not a tool call
         if (
           ctx.taskType === "social-sentiment" ||
@@ -286,8 +396,8 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
           ctx.taskType === "community-pulse"
         ) {
           return {
-            provider: "openrouter",
-            model: "x-ai/grok-3-mini",
+            provider: "xai",
+            model: "grok-3-mini",
             reason:
               "PULSE social sentiment → Grok 3 Mini (native X/Twitter live data, cheapest $0.30/M)",
           };
@@ -309,15 +419,15 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
         // Sentiment synthesis + narrative → Sonnet (nuanced qualitative analysis)
         if (ctx.taskType === "sentiment-analysis" || ctx.taskType === "narrative-synthesis") {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-sonnet-4-6",
+            provider: "anthropic",
+            model: "claude-sonnet-4-6",
             reason: "PULSE sentiment/narrative → Sonnet (nuanced qualitative analysis)",
           };
         }
         // Default PULSE → Gemini 2.5 Flash (1M context, built-in thinking, market data ingestion)
         return {
-          provider: "openrouter",
-          model: "google/gemini-2.5-flash",
+          provider: "google",
+          model: "gemini-2.5-flash",
           reason: "PULSE default → Gemini 2.5 Flash (1M context, thinking mode, market data)",
         };
       }
@@ -349,8 +459,8 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
         // Deep arxiv paper analysis → Haiku + extended thinking (cost-effective for many papers)
         if (ctx.taskType === "paper-analysis") {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-haiku-4-5-20251001",
+            provider: "anthropic",
+            model: "claude-haiku-4-5-20251001",
             reason:
               "DEX paper analysis → Haiku 4.5 + extended thinking (deep arxiv, cost-efficient)",
             extendedThinking: true,
@@ -360,16 +470,16 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
         // Weekly digest synthesis → Sonnet (quality is critical for ARI's most important weekly output)
         if (ctx.taskType === "weekly-digest-synthesis") {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-sonnet-4-6",
+            provider: "anthropic",
+            model: "claude-sonnet-4-6",
             reason: "DEX weekly-digest-synthesis → Sonnet (quality-critical weekly output)",
           };
         }
         // Long document analysis (>50K tokens) → Gemini 2.5 Flash (1M context window)
         if (ctx.contextTokens !== undefined && ctx.contextTokens > 50_000) {
           return {
-            provider: "openrouter",
-            model: "google/gemini-2.5-flash",
+            provider: "google",
+            model: "gemini-2.5-flash",
             reason: `DEX long-doc analysis (${ctx.contextTokens} tokens) → Gemini 2.5 Flash (1M context)`,
           };
         }
@@ -383,23 +493,31 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
 
       // ── RUNE 🔧 (CODEX plane catches most RUNE calls above; this handles edge cases)
       if (name === "RUNE") {
-        const runeModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
-        validateRuneModel(runeModel);
-        if (ctx.stakes !== undefined && ctx.stakes >= 85) {
+        // 3-tier: Codex OAuth subscription → OpenAI API → Anthropic Sonnet
+        if (hasCodexOAuth()) {
           return {
-            provider: "openrouter",
-            model: "anthropic/claude-opus-4-6",
-            reason: "RUNE high-stakes engineering → Opus (security/architecture)",
+            provider: "openai-codex",
+            model: "gpt-5.3-codex",
+            reason: "RUNE → Codex OAuth subscription (free, no API cost)",
+          };
+        }
+        if (process.env.OPENAI_API_KEY?.trim()) {
+          const runeEnv = process.env.RUNE_PRIMARY_MODEL;
+          const modelName = runeEnv ? parseRuneModelEnv(runeEnv).modelName : "gpt-4.1";
+          return {
+            provider: "openai",
+            model: modelName,
+            reason: "RUNE → OpenAI API (OPENAI_API_KEY present)",
           };
         }
         return {
-          provider: "openrouter",
-          model: runeModel,
-          reason: "RUNE → primary model (engineering build)",
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          reason: "RUNE → Anthropic fallback (no OpenAI auth)",
         };
       }
 
-      // ── Default: use profile model (ARI + any unrecognized named agent)
+      // ── Default: use profile model (any unrecognized named agent)
       return {
         provider: profile.provider,
         model: profile.model,
@@ -410,18 +528,18 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
 
   // 2. Engineering tasks → RUNE routing
   if (ctx.taskType === "engineering" || ENGINEERING_PATTERNS.some((p) => p.test(ctx.prompt))) {
-    const primaryModel = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
-    validateRuneModel(primaryModel);
     if (ctx.stakes !== undefined && ctx.stakes >= 85) {
       return {
-        provider: "openrouter",
-        model: "anthropic/claude-opus-4-6",
+        provider: "anthropic",
+        model: "claude-opus-4-6",
         reason: "High-stakes engineering → Opus (security/architecture)",
       };
     }
+    const runeEnv = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
+    const { provider, modelName } = parseRuneModelEnv(runeEnv);
     return {
-      provider: "openrouter",
-      model: primaryModel,
+      provider,
+      model: modelName,
       reason: "Engineering task → RUNE primary model",
     };
   }
@@ -439,8 +557,8 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
   // 4. Long-context overflow → Gemini 2.5 Flash (1M context)
   if (ctx.contextTokens !== undefined && ctx.contextTokens > LONG_CONTEXT_TOKEN_THRESHOLD) {
     return {
-      provider: "openrouter",
-      model: "google/gemini-2.5-flash",
+      provider: "google",
+      model: "gemini-2.5-flash",
       reason: `Context ${ctx.contextTokens} tokens > 100K → Gemini 2.5 Flash (1M context)`,
     };
   }
@@ -467,13 +585,13 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
   const score = computeValueScore(ctx);
   const tier = scoreToTier(score);
   return {
-    provider: "openrouter",
+    provider: "anthropic",
     model: TIER_MODEL_MAP[tier],
     reason: `ValueScore ${Math.round(score)} → ${tier} (${TIER_MODEL_MAP[tier]})`,
   };
 }
 
-// === OPENROUTER PROMPT CACHING ===
+// === PROMPT CACHING ===
 
 export type CacheConfig = {
   type: "ephemeral";
@@ -486,10 +604,10 @@ const CACHE_THRESHOLD_SONNET = 1_024;
 const CACHE_THRESHOLD_HAIKU = 1_024;
 
 /**
- * Get the appropriate cache configuration for an OpenRouter request.
+ * Get the appropriate cache configuration for an Anthropic direct API request.
  *
- * IMPORTANT: Prompt caching via cache_control is only supported for Anthropic
- * models routed through OpenRouter. Returns null for Gemini and Perplexity models.
+ * IMPORTANT: Prompt caching via cache_control is only supported for Anthropic models.
+ * Returns null for Gemini, Perplexity, xAI, and OpenAI models.
  *
  * Named Anthropic agents use ttl=1h — stable SOUL+workspace context achieves
  * ~70% cost reduction (90% cache hit rate on SOUL.md + workspace files).
@@ -502,7 +620,7 @@ export function getCacheConfig(ctx: TaskContext): CacheConfig | null {
     const profile = AGENT_PROFILES[name];
     if (profile) {
       // Prompt caching only works for Anthropic models
-      if (!profile.model.startsWith("anthropic/")) {
+      if (profile.provider !== "anthropic") {
         return null;
       }
       const threshold = profile.model.includes("opus")
@@ -527,7 +645,7 @@ export function getCacheConfig(ctx: TaskContext): CacheConfig | null {
 
 /**
  * Validate RUNE_PRIMARY_MODEL format at startup.
- * Must be provider/model-name (e.g. 'anthropic/claude-sonnet-4-6', 'openai/codex-5.3').
+ * Must be provider/model-name (e.g. 'anthropic/claude-sonnet-4-6', 'openai/gpt-5.3-codex').
  */
 export function validateRunePrimaryModel(value: string | undefined): {
   valid: boolean;
@@ -543,7 +661,14 @@ export function validateRunePrimaryModel(value: string | undefined): {
     };
   }
   const [provider] = value.split("/");
-  const ALLOWED_PROVIDERS = ["anthropic", "openai", "google", "perplexity", "mistral"];
+  const ALLOWED_PROVIDERS = [
+    "anthropic",
+    "openai",
+    "openai-codex",
+    "google",
+    "perplexity",
+    "mistral",
+  ];
   if (!ALLOWED_PROVIDERS.includes(provider)) {
     return {
       valid: false,

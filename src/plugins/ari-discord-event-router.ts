@@ -12,6 +12,9 @@ export interface DiscordEventRouterConfig {
     opsDashboard: string;
     videoQueue: string;
     outreachQueue: string;
+    apiLogs: string;
+    wins: string;
+    published: string;
   };
 }
 
@@ -87,6 +90,18 @@ const EVENT_ROUTES: Record<string, EventRoute> = {
     channelKey: "outreachQueue",
     format: (p) =>
       `🎯 **Outreach Ready** — ${str(p["businessName"])}\nScore: ${str(p["score"])}/100 | Bundle: ${str(p["bundleId"])}\nUse \`/ari-p2-approve ${str(p["bundleId"])}\` to approve.`,
+  },
+  "ops:win_logged": {
+    channelKey: "wins",
+    format: (p) => `🏆 **Win** — ${str(p["title"])}\n${str(p["summary"])}`,
+  },
+  "pipeline:published": {
+    channelKey: "published",
+    format: (p) => `📢 **Published** — ${str(p["title"])}`,
+  },
+  "ops:trace_log": {
+    channelKey: "apiLogs",
+    format: (p) => `🔍 **Trace** [${str(p["level"] ?? "info")}] ${str(p["message"])}`,
   },
 };
 

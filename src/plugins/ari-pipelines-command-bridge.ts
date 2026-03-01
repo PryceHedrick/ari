@@ -1,6 +1,7 @@
 import type { ReplyPayload } from "../auto-reply/types.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { sleep } from "../utils.js";
+import { getCapabilityStatuses } from "./ari-capability-registry.js";
 import type { OpenClawPluginApi, PluginCommandContext } from "./types.js";
 
 type CommandScope = "status" | "p1" | "p2";
@@ -3373,6 +3374,29 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
       runtime,
       scope: "status",
       handler: async () => handleStatusCommand(runtime),
+    }),
+  });
+
+  api.registerCommand({
+    name: "ari-capabilities",
+    description: "Show which ARI capabilities are active vs missing",
+    acceptsArgs: false,
+    handler: withAccessControl({
+      runtime,
+      scope: "status",
+      handler: async (_ctx) => {
+        const statuses = getCapabilityStatuses();
+        const lines = statuses.map((s) => {
+          const icon = s.available ? "✅" : s.missingVars.length > 0 ? "❌" : "⚠️";
+          const detail = s.available
+            ? "active"
+            : s.missingVars.length > 0
+              ? `missing: ${s.missingVars.join(", ")}`
+              : `flag not set: ${s.featureFlag ?? ""}`;
+          return `${icon} **${s.label}** — ${detail}`;
+        });
+        return asReply([`🔌 **ARI Capabilities**\n${lines.join("\n")}`]);
+      },
     }),
   });
 }

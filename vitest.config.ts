@@ -39,6 +39,8 @@ export default defineConfig({
       "test/**/*.test.ts",
       "ui/src/ui/views/usage-render-details.test.ts",
       "ui/src/ui/controllers/agents.test.ts",
+      "plugins/**/*.test.ts",
+      "scripts/__tests__/**/*.test.ts",
     ],
     setupFiles: ["test/setup.ts"],
     exclude: [
