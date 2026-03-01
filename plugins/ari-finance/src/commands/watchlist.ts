@@ -1,18 +1,31 @@
+import type { WatchlistEntry } from "../finance-db.js";
 import { addToWatchlist, removeFromWatchlist, getWatchlist } from "../finance-db.js";
 import { createOrUpdatePlaybook } from "../finance-playbook.js";
 
+const VALID_ASSET_TYPES: WatchlistEntry["asset_type"][] = new Set([
+  "stock",
+  "crypto",
+  "etf",
+  "macro",
+  "pokemon",
+]);
+
 export async function handleWatchlistCommand(args: string): Promise<string> {
   const parts = args.trim().split(/\s+/);
-  const [action, symbol] = parts;
+  const [action, symbol, assetTypeRaw] = parts;
 
   try {
     if (action === "add" && symbol) {
-      addToWatchlist(symbol.toUpperCase());
+      const assetType =
+        assetTypeRaw && VALID_ASSET_TYPES.has(assetTypeRaw as WatchlistEntry["asset_type"])
+          ? (assetTypeRaw as WatchlistEntry["asset_type"])
+          : "stock";
+      addToWatchlist(symbol.toUpperCase(), { asset_type: assetType });
       const entry = getWatchlist().find((e) => e.symbol === symbol.toUpperCase());
       if (entry) {
         createOrUpdatePlaybook(entry);
       }
-      return `✅ Added **${symbol.toUpperCase()}** to watchlist — playbook created in vault`;
+      return `✅ Added **${symbol.toUpperCase()}** (${assetType}) to watchlist — playbook created in vault`;
     }
 
     if (action === "remove" && symbol) {
@@ -25,7 +38,7 @@ export async function handleWatchlistCommand(args: string): Promise<string> {
     // List
     const watchlist = getWatchlist();
     if (watchlist.length === 0) {
-      return "📋 Watchlist is empty — add symbols: /ari-watchlist add BTC";
+      return "📋 Watchlist is empty — add symbols: /ari-watchlist add BTC | /ari-watchlist add CHARIZARD_PSA10 pokemon";
     }
 
     const lines = watchlist.map(

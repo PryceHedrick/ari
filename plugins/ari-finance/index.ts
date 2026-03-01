@@ -77,13 +77,15 @@ const plugin = {
       parameters: Type.Object({
         symbol: Type.String({ description: "Ticker symbol e.g. BTC, AAPL" }),
         asset_type: Type.Optional(
-          Type.String({ description: "stock|crypto|etf|macro (default: stock)" }),
+          Type.String({ description: "stock|crypto|etf|macro|pokemon (default: stock)" }),
         ),
       }),
       execute: async (_toolCallId, params) => {
         const p = params as { symbol: string; asset_type?: string };
         const sym = p.symbol.toUpperCase();
-        addToWatchlist(sym, { asset_type: p.asset_type as "stock" | "crypto" | "etf" | "macro" });
+        addToWatchlist(sym, {
+          asset_type: p.asset_type as "stock" | "crypto" | "etf" | "macro" | "pokemon",
+        });
         const entry = getWatchlist().find((e) => e.symbol === sym);
         if (entry) {
           createOrUpdatePlaybook(entry);
@@ -246,7 +248,7 @@ const plugin = {
 
     api.registerCommand({
       name: "ari-watchlist",
-      description: "Manage watchlist: /ari-watchlist add|remove|list [symbol]",
+      description: "Manage watchlist: add|remove|list [symbol] [asset_type]",
       acceptsArgs: true,
       requireAuth: true,
       handler: async (ctx) => handleWatchlistCommand(ctx.args ?? ""),

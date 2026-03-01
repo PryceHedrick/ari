@@ -97,7 +97,7 @@ export function getFinanceDb(): DatabaseInstance {
 export interface WatchlistEntry {
   symbol: string;
   name?: string;
-  asset_type: "stock" | "crypto" | "etf" | "macro";
+  asset_type: "stock" | "crypto" | "etf" | "macro" | "pokemon";
   added_at: string;
   notes?: string;
 }
