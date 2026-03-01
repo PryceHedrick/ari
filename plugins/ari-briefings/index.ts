@@ -26,12 +26,23 @@ import type { BriefingData } from "./src/briefing-builder.js";
 
 const BRIEFING_TASK_IDS = new Set(["morning-briefing", "workday-wrap", "evening-briefing"]);
 
+// Latest Obsidian vault snapshot (populated by ari-obsidian morning-vault-digest)
+let latestVaultSnapshot: Record<string, unknown> | undefined;
+
 const plugin = {
   id: "ari-briefings",
   name: "ARI Briefings",
   description: "Morning/workday/evening briefings via Discord with ElevenLabs voice",
   configSchema: emptyPluginConfigSchema(),
   register(_api: OpenClawPluginApi): void {
+    // Subscribe to Obsidian digest-ready → store vault snapshot for briefings
+    ariBus.on("ari:obsidian:digest-ready", (payload) => {
+      const data = payload;
+      if (data.snapshot) {
+        latestVaultSnapshot = data.snapshot as Record<string, unknown>;
+      }
+    });
+
     // Handle briefing tasks from ari-scheduler via shared event bus
     ariBus.on("ari:scheduler:task", (payload) => {
       const ctx = payload as Record<string, unknown>;
@@ -83,6 +94,11 @@ const plugin = {
             gold: cached.macro?.find((m) => m.symbol === "GOLD")?.value,
           };
         }
+      }
+
+      // Attach vault snapshot to morning briefing if available
+      if (type === "morning" && latestVaultSnapshot && !data.vault) {
+        data.vault = latestVaultSnapshot;
       }
 
       const result = buildBriefing({

@@ -53,7 +53,16 @@ export interface AriBusEvents {
   // Ops tracing + policy
   "ari:trace:event": [payload: Record<string, unknown>];
   "ari:ops:kill_switch": [payload: { scope: string; reason: string; ts: string }];
+  "ari:ops:budget_warning": [
+    payload: { usedTokens: number; budgetTokens: number; pctUsed: number },
+  ];
   "ari:security:skill_hash_mismatch": [payload: { slug: string; toolName: string; ts: string }];
+  // Obsidian
+  "ari:obsidian:digest-ready": [payload: Record<string, unknown>];
+  "ari:obsidian:capture": [payload: Record<string, unknown>];
+  // Finance
+  "ari:finance:brief-ready": [payload: Record<string, unknown>];
+  "ari:finance:signal-updated": [payload: Record<string, unknown>];
 }
 
 class AriBus extends EventEmitter {
@@ -76,4 +85,4 @@ class AriBus extends EventEmitter {
 
 // Singleton — all ARI plugins share this instance within the same Node.js process
 export const ariBus = new AriBus();
-ariBus.setMaxListeners(50); // 13 plugins × multiple events
+ariBus.setMaxListeners(80); // 16 plugins × multiple events
