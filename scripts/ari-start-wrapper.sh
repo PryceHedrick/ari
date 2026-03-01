@@ -27,7 +27,14 @@ umask 077
 mkdir -p "$LOG_DIR"
 
 # Load env (secrets live outside the repo, not in git)
-[ -f "$HOME/.openclaw/.env" ] && set -a && source "$HOME/.openclaw/.env" && set +a
+# Use set +e around source to tolerate any non-bash-compatible lines in the .env file
+if [ -f "$HOME/.openclaw/.env" ]; then
+  set +e  # Temporarily disable errexit; malformed .env lines must not kill the wrapper
+  set -a
+  source "$HOME/.openclaw/.env" 2>/dev/null
+  set -e
+  set +a
+fi
 
 # Startup banner
 GIT_SHA=$(git -C "$CANONICAL_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")

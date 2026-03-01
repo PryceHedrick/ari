@@ -1,11 +1,15 @@
+import { Cron } from "croner";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { ariBus } from "../ari-shared/src/event-bus.js";
 import { CRON_TASKS, getTasksByAgent, getCriticalTasks } from "./src/cron-tasks.js";
 
 /**
- * ARI Scheduler Plugin — 21 cron tasks across all named agents
+ * ARI Scheduler Plugin — 24 cron tasks across all named agents
  *
+ * Uses croner (available in openclaw workspace) for timezone-aware scheduling.
  * All tasks run in Eastern Time (America/New_York — ADR-012).
+ * Dispatches tasks via the shared ariBus (plugin-to-plugin event bus).
  *
  * Task distribution:
  *   SYSTEM: heartbeat (every 15 min), daily-backup (03:00)
@@ -15,47 +19,54 @@ import { CRON_TASKS, getTasksByAgent, getCriticalTasks } from "./src/cron-tasks.
  *           morning-vault-digest (daily 05:00), weekly-vault-scan (Mon 09:00)
  *   ARI:    morning-briefing (06:30), workday-wrap (16:00 M-F), evening-briefing (21:00),
  *           memory-dedup (22:00), cost-audit (23:45), weekly-wisdom (Sun 18:00)
- *   CHASE:  leads-pipeline (Mon 14:00), crm-sync (Fri 18:00)
+ *   NOVA:   nova-market-scan (10:00 daily)
+ *   CHASE:  leads-pipeline (Mon/Wed/Fri 14:00 or 10:00), crm-sync (Fri 18:00)
  */
 const plugin = {
   id: "ari-scheduler",
   name: "ARI Scheduler",
-  description: "19 cron tasks — all named agents, Eastern Time (ADR-012)",
+  description: "24 cron tasks — all named agents, Eastern Time (ADR-012)",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi): void {
-    // Register all 21 tasks when OpenClaw scheduler API is available
-    // The scheduler is wired to the named agent coordinator for dispatch
-    if (typeof (api as Record<string, unknown>).registerCron === "function") {
-      const registerCron = (api as Record<string, unknown>).registerCron as (task: {
-        id: string;
-        cron: string;
-        handler: () => void;
-      }) => void;
+    // Register the scheduler as a service so it starts with the gateway
+    // and stops cleanly on shutdown.
+    api.registerService({
+      id: "ari-scheduler-cron",
+      start(ctx) {
+        const log = ctx.logger;
+        const jobs: Cron[] = [];
 
-      for (const task of CRON_TASKS) {
-        registerCron({
-          id: task.id,
-          cron: task.cron,
-          handler: () => {
-            api.emit?.("ari:scheduler:task", {
-              taskId: task.id,
-              agent: task.agent,
-              channel: task.channel,
-              gate: task.gate,
-              priority: task.priority,
-            });
-          },
-        });
-      }
-    } else {
-      // OpenClaw host does not implement registerCron — all 21 tasks are skipped.
-      // This is a P0 failure for the morning-briefing task.
-      api.emit?.("ari:scheduler:warn", {
-        message:
-          "registerCron not available on OpenClaw API — all 19 scheduled tasks are disabled.",
-        taskCount: CRON_TASKS.length,
-      });
-    }
+        for (const task of CRON_TASKS) {
+          try {
+            const job = new Cron(
+              task.cron,
+              { timezone: "America/New_York", protect: true, catch: true },
+              () => {
+                log.info(`[ari-scheduler] firing task: ${task.id} (agent=${task.agent})`);
+                ariBus.emit("ari:scheduler:task", {
+                  taskId: task.id,
+                  agent: task.agent,
+                  channel: task.channel,
+                  gate: task.gate,
+                  priority: task.priority,
+                });
+              },
+            );
+            jobs.push(job);
+          } catch (err) {
+            log.error(
+              `[ari-scheduler] failed to register task ${task.id}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+
+        log.info(`[ari-scheduler] ${jobs.length}/${CRON_TASKS.length} tasks scheduled (ET)`);
+      },
+      stop(ctx) {
+        // croner jobs are garbage-collected automatically; log the stop
+        ctx.logger.info("[ari-scheduler] scheduler service stopped");
+      },
+    });
   },
 };
 

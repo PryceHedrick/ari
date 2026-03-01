@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { ariBus } from "../ari-shared/src/event-bus.js";
 import { processBookmark } from "./src/bookmark-pipeline.js";
 import { cleanupExpiredCronState, getCronStateStats } from "./src/cron-state.js";
 import { saveMemory, queryMemories, getMemoryStats } from "./src/memory-db.js";
@@ -132,7 +133,7 @@ const plugin = {
     });
 
     // ── EventBus: Store memory ───────────────────────────────────────────────
-    api.on("ari:memory:store", (payload: unknown) => {
+    ariBus.on("ari:memory:store", (payload) => {
       const data = payload as {
         content?: string;
         source?: string;
@@ -151,17 +152,17 @@ const plugin = {
     });
 
     // ── EventBus: Search request ─────────────────────────────────────────────
-    api.on("ari:memory:search_request", (payload: unknown) => {
+    ariBus.on("ari:memory:search_request", (payload) => {
       const data = payload as { query?: string; limit?: number; requestId?: string };
       if (!data?.query) {
         return;
       }
       const results = searchMemories(data.query, data.limit ?? 10);
-      api.emit?.("ari:memory:search_result", { requestId: data.requestId, results });
+      ariBus.emit("ari:memory:search_result", { requestId: data.requestId, results });
     });
 
     // ── EventBus: Scheduler — memory dedup (22:00 daily) ────────────────────
-    api.on("ari:scheduler:task", (payload: unknown) => {
+    ariBus.on("ari:scheduler:task", (payload) => {
       const data = payload as { taskId?: string };
       if (data?.taskId !== "memory-dedup") {
         return;
@@ -179,7 +180,7 @@ const plugin = {
       const cronDeleted = cleanupExpiredCronState();
       const cronStats = getCronStateStats();
 
-      api.emit?.("ari:memory:dedup_complete", {
+      ariBus.emit("ari:memory:dedup_complete", {
         memories: stats.memories,
         bookmarks: stats.bookmarks,
         indexedTerms: stats.indexedTerms,

@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { ariBus } from "../ari-shared/src/event-bus.js";
 import { registerKernelGuards } from "./src/sanitizer.js";
 
 /**
@@ -46,7 +47,7 @@ const plugin = {
           "[ARI-KERNEL] STARTUP HALT: API key format invalid. " +
           "Subscription OAuth tokens are PROHIBITED (Anthropic ToS Section 3.7, enforced Feb 2026). " +
           "Use OPENROUTER_API_KEY (sk_or_*) or ANTHROPIC_API_KEY (sk-ant-*) only.";
-        api.emit?.("ari:kernel:api-key-invalid", { message: msg });
+        ariBus.emit("ari:kernel:api-key-invalid", { message: msg });
         throw new Error(msg);
       }
     }

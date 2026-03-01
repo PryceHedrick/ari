@@ -6,6 +6,7 @@ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { sendVoiceMessageDiscord } from "../../src/discord/send.outbound.js";
 import { registerDiscordEventRouter } from "../../src/plugins/ari-discord-event-router.js";
 import { registerAriPipelinesCommandBridge } from "../../src/plugins/ari-pipelines-command-bridge.js";
+import { ariBus } from "../ari-shared/src/event-bus.js";
 
 /**
  * ARI Autonomous Plugin — Self-healing watchdog + intelligence scanner.
@@ -71,8 +72,8 @@ const plugin = {
     // waveform generation + Discord voice message flag automatically.
     const MAX_VOICE_BYTES = 7 * 1024 * 1024; // 7 MB guard (Discord standard limit is 8 MB)
 
-    api.on("ari:voice:ready", (event) => {
-      const ctx = event as Record<string, unknown>;
+    ariBus.on("ari:voice:ready", (event) => {
+      const ctx = event;
       const audioBuffer = ctx.audioBuffer instanceof Buffer ? ctx.audioBuffer : null;
       const channelName = typeof ctx.channel === "string" ? ctx.channel : "main";
 

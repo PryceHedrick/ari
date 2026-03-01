@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { ariBus } from "../ari-shared/src/event-bus.js";
 import { synthesizeSpeech } from "./src/tts.js";
 
 /**
@@ -26,7 +27,7 @@ const plugin = {
   name: "ARI Voice",
   description: "ElevenLabs TTS (eleven_turbo_v2_5) + Discord OGG voice attachments",
   configSchema: emptyPluginConfigSchema(),
-  register(api: OpenClawPluginApi): void {
+  register(_api: OpenClawPluginApi): void {
     // Gate check at registration time
     if (process.env.ARI_VOICE_ENABLED !== "true") {
       return;
@@ -36,8 +37,8 @@ const plugin = {
     }
 
     // Listen for briefing events that include audioText
-    api.on("ari:briefing:ready", (event) => {
-      const ctx = event as Record<string, unknown>;
+    ariBus.on("ari:briefing:ready", (event) => {
+      const ctx = event;
       const audioText = typeof ctx.audioText === "string" ? ctx.audioText : "";
       const channel = typeof ctx.channel === "string" ? ctx.channel : "ari-main";
       const audioType = typeof ctx.audioType === "string" ? ctx.audioType : "briefing";
@@ -53,19 +54,19 @@ const plugin = {
       })
         .then((result) => {
           if (!result.success) {
-            api.emit?.("ari:voice:error", { error: result.error, channel });
+            ariBus.emit("ari:voice:error", { error: result.error, channel });
             return;
           }
 
           // Sprint 4 gate: ARI_VOICE_CHANNEL_ENABLED → live Discord voice channel
           if (process.env.ARI_VOICE_CHANNEL_ENABLED === "true") {
             const channelId = process.env.ARI_DISCORD_VOICE_CHANNEL_ID ?? "";
-            api.emit?.("discord:voice:join", { channelId });
-            api.emit?.("discord:voice:speak", { audioBuffer: result.audioBuffer, format: "ogg" });
-            api.emit?.("discord:voice:leave", {});
+            ariBus.emit("discord:voice:join", { channelId });
+            ariBus.emit("discord:voice:speak", { audioBuffer: result.audioBuffer, format: "ogg" });
+            ariBus.emit("discord:voice:leave", {});
           } else {
             // Default: emit raw audio buffer for delivery via sendVoiceMessageDiscord
-            api.emit?.("ari:voice:ready", {
+            ariBus.emit("ari:voice:ready", {
               audioBuffer: result.audioBuffer,
               channel,
               wordCount: result.wordCount,
@@ -74,11 +75,7 @@ const plugin = {
         })
         .catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
-          api.emit?.("ari:voice:error", { error: msg, channel });
-          // Fallback: guarantee error is observable even if api.emit is unavailable
-          if (!api.emit) {
-            console.error("[ari-voice] synthesis error:", msg);
-          }
+          ariBus.emit("ari:voice:error", { error: msg, channel });
         });
     });
   },

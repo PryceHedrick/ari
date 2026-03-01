@@ -1,6 +1,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { writeCronState, MARKET_SNAPSHOT_KEY } from "../ari-memory/src/cron-state.js";
+import { ariBus } from "../ari-shared/src/event-bus.js";
 import {
   evaluateAlerts,
   buildCommunitySnapshot,
@@ -46,9 +47,9 @@ const plugin = {
   name: "ARI Market",
   description: "Crypto/stock/Pokemon monitoring with Z-score anomaly detection",
   configSchema: emptyPluginConfigSchema(),
-  register(api: OpenClawPluginApi): void {
+  register(_api: OpenClawPluginApi): void {
     // Handle market monitoring tasks from ari-scheduler
-    api.on("ari:scheduler:task", (event) => {
+    ariBus.on("ari:scheduler:task", (event) => {
       const ctx = event as Record<string, unknown>;
       const taskId = typeof ctx.taskId === "string" ? ctx.taskId : "";
       if (!MARKET_TASK_IDS.has(taskId)) {
@@ -71,7 +72,7 @@ const plugin = {
       };
 
       // Emit snapshot for briefing integration
-      api.emit?.("ari:market:snapshot", {
+      ariBus.emit("ari:market:snapshot", {
         snapshot,
         taskId,
         channel: ctx.channel ?? "market-alerts",
@@ -86,7 +87,7 @@ const plugin = {
       // Send alerts that pass quiet hours gate
       const sendableAlerts = alerts.filter((a) => shouldSendAlert(a));
       for (const alert of sendableAlerts) {
-        api.emit?.("ari:market:alert", {
+        ariBus.emit("ari:market:alert", {
           alert,
           channel: alert.isFlashCrash ? "system-status" : "market-alerts",
         });
@@ -95,7 +96,7 @@ const plugin = {
       // Format and post full snapshot for portfolio/midday/close tasks
       if (["portfolio-snapshot", "market-midday", "market-close"].includes(taskId)) {
         const formatted = formatPulseSnapshot(snapshot);
-        api.emit?.("ari:market:formatted-snapshot", {
+        ariBus.emit("ari:market:formatted-snapshot", {
           content: formatted,
           channel: "market-alerts",
           taskId,
@@ -105,8 +106,8 @@ const plugin = {
 
     // Handle social signal ingestion — X/Twitter signals (Section 26)
     // Reliability gate: weight ≥ 0.55 required to emit social:signal-ingested
-    api.on("social:x-signal", (event) => {
-      const ctx = event as Record<string, unknown>;
+    ariBus.on("social:x-signal", (event) => {
+      const ctx = event;
       const reliabilityWeight =
         typeof ctx.reliabilityWeight === "number"
           ? ctx.reliabilityWeight
@@ -116,7 +117,7 @@ const plugin = {
         return; // Below reliability gate — discard
       }
 
-      api.emit?.("social:signal-ingested", {
+      ariBus.emit("social:signal-ingested", {
         envelope: {
           source: "x",
           account: ctx.account,
@@ -129,8 +130,8 @@ const plugin = {
     });
 
     // Handle social signal ingestion — Reddit signals (Section 26)
-    api.on("social:reddit-signal", (event) => {
-      const ctx = event as Record<string, unknown>;
+    ariBus.on("social:reddit-signal", (event) => {
+      const ctx = event;
       const reliabilityWeight =
         typeof ctx.reliabilityWeight === "number"
           ? ctx.reliabilityWeight
@@ -140,7 +141,7 @@ const plugin = {
         return; // Below reliability gate — discard
       }
 
-      api.emit?.("social:signal-ingested", {
+      ariBus.emit("social:signal-ingested", {
         envelope: {
           source: "reddit",
           subreddit: ctx.subreddit,
@@ -155,17 +156,17 @@ const plugin = {
     });
 
     // Handle direct price ingestion events (from external API pollers)
-    api.on("ari:market:price-update", (event) => {
-      const ctx = event as Record<string, unknown>;
+    ariBus.on("ari:market:price-update", (event) => {
+      const ctx = event;
       const prices = (ctx.prices ?? []) as PricePoint[];
       const alerts = evaluateAlerts(prices).filter((a) => shouldSendAlert(a));
 
       // P0 flash crashes go to #system-status immediately
       const p0 = alerts.filter((a) => a.severity === "P0");
       for (const alert of p0) {
-        api.emit?.("ari:market:alert", { alert, channel: "system-status" });
+        ariBus.emit("ari:market:alert", { alert, channel: "system-status" });
         // Canonical flash-crash event (Section 10 — consumed by ari-autonomous + governance)
-        api.emit?.("market:flash-crash", {
+        ariBus.emit("market:flash-crash", {
           asset: alert.symbol,
           pctChange: alert.changePct,
           direction: alert.changePct > 0 ? "up" : "down",

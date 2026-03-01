@@ -2,6 +2,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import type { MarketSnapshot } from "../ari-market/src/market-monitor.js";
 import { readCronState, MARKET_SNAPSHOT_KEY } from "../ari-memory/src/cron-state.js";
+import { ariBus } from "../ari-shared/src/event-bus.js";
 import { buildBriefing } from "./src/briefing-builder.js";
 import type { BriefingData } from "./src/briefing-builder.js";
 
@@ -30,10 +31,10 @@ const plugin = {
   name: "ARI Briefings",
   description: "Morning/workday/evening briefings via Discord with ElevenLabs voice",
   configSchema: emptyPluginConfigSchema(),
-  register(api: OpenClawPluginApi): void {
-    // Handle briefing tasks from ari-scheduler
-    api.on("ari:scheduler:task", (event) => {
-      const ctx = event as Record<string, unknown>;
+  register(_api: OpenClawPluginApi): void {
+    // Handle briefing tasks from ari-scheduler via shared event bus
+    ariBus.on("ari:scheduler:task", (payload) => {
+      const ctx = payload as Record<string, unknown>;
       const taskId = typeof ctx.taskId === "string" ? ctx.taskId : "";
       if (!BRIEFING_TASK_IDS.has(taskId)) {
         return;
@@ -90,8 +91,8 @@ const plugin = {
         ...data,
       });
 
-      // Emit the briefing for Discord delivery
-      api.emit?.("ari:briefing:ready", {
+      // Emit the briefing for Discord delivery via shared bus
+      ariBus.emit("ari:briefing:ready", {
         type,
         discord: result.discord,
         audioText: result.audioText,
@@ -102,7 +103,7 @@ const plugin = {
 
       // Flag low-confidence briefings to ARI for review
       if (result.confidence < 80) {
-        api.emit?.("ari:briefing:low-confidence", {
+        ariBus.emit("ari:briefing:low-confidence", {
           type,
           confidence: result.confidence,
           message: `Briefing confidence ${result.confidence}/100 — ARI review recommended`,
