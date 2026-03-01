@@ -598,6 +598,19 @@ importers:
         specifier: workspace:*
         version: link:../..
 
+  plugins/ari-finance:
+    dependencies:
+      better-sqlite3:
+        specifier: 12.6.2
+        version: 12.6.2
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
   plugins/ari-governance:
     devDependencies:
       openclaw:
@@ -635,6 +648,19 @@ importers:
 
   plugins/ari-notion:
     devDependencies:
+      openclaw:
+        specifier: workspace:*
+        version: link:../..
+
+  plugins/ari-obsidian:
+    dependencies:
+      better-sqlite3:
+        specifier: 12.6.2
+        version: 12.6.2
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
       openclaw:
         specifier: workspace:*
         version: link:../..
