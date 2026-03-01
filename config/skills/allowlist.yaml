@@ -1,5 +1,82 @@
 version: 1
 note: >
-  No marketplace skills installed. Executable marketplace code requires
-  out-of-process sandboxed runner (not yet implemented). See docs/ops/security.md.
-skills: []
+  First-party ARI skills (obsidian-second-brain, ari-finance-suite) are internal tier
+  and self-enforce resource boundaries via assertVaultPath() and assertNetworkDomain().
+  Humanizer is community tier (declarative-only SKILL.md, no executable code).
+  No marketplace skills with executable code enabled without out-of-process sandbox.
+  See docs/ops/security.md.
+skills:
+  - slug: obsidian-second-brain
+    tier: internal
+    tools:
+      - ari_obsidian_init
+      - ari_obsidian_capture
+      - ari_obsidian_search
+      - ari_obsidian_digest_daily
+      - ari_obsidian_digest_weekly
+      - ari_obsidian_scan_repo
+      - ari_obsidian_reindex
+      - ari_obsidian_status
+      - ari_obsidian_context_pack
+    publisher: "PryceHedrick (first-party)"
+
+  - slug: ari-finance-suite
+    tier: internal
+    tools:
+      - ari_finance_market_brief
+      - ari_finance_watchlist_add
+      - ari_finance_watchlist_remove
+      - ari_finance_watchlist_list
+      - ari_finance_ticker_detail
+      - ari_finance_sentiment
+      - ari_finance_forecast
+      - ari_finance_report
+      - ari_finance_signal_update
+      - ari_finance_news_fetch
+    publisher: "PryceHedrick (first-party)"
+    declaredDomains:
+      - "finance.yahoo.com"
+      - "feeds.coindesk.com"
+      - "query1.finance.yahoo.com"
+
+  - slug: humanizer
+    tier: community
+    tools: []
+    publisher: "ClawHub"
+    note: "Declarative-only SKILL.md — no executable scripts. Audit pending before prod enablement."
+
+  - slug: github
+    tier: community
+    tools: []
+    publisher: "ClawHub"
+    note: "Declarative — guides agent to use system `gh` CLI (already installed). No executable scripts."
+
+  - slug: session-logs
+    tier: community
+    tools: []
+    publisher: "ClawHub"
+    note: "Declarative — guides agent to search ~/.openclaw/agents/ JSONL logs via jq/rg. No executable scripts."
+
+  - slug: healthcheck
+    tier: community
+    tools: []
+    publisher: "ClawHub"
+    note: "Declarative — security audit checklist for ARI host Mac Mini. No executable scripts."
+
+  - slug: weather
+    tier: community
+    tools: []
+    publisher: "ClawHub"
+    note: "Declarative — guides agent to curl wttr.in for briefing context. No executable scripts."
+
+  - slug: discord
+    tier: community
+    tools: []
+    publisher: "ClawHub"
+    note: "Declarative — Discord-specific patterns (reactions, threads, rate limits). No executable scripts."
+
+  - slug: tmux
+    tier: community
+    tools: []
+    publisher: "ClawHub"
+    note: "Declarative — remote terminal automation for ARI ops via tmux. No executable scripts."

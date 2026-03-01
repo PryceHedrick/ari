@@ -1,9 +1,35 @@
 {
-  "name": "forensic",
-  "description": "Forensic profile: maximum tracing detail, strict policy, 180-day retention. Requires explicit operator approval to enable.",
-  "ari-ops": {
-    "tracing": { "enabled": true, "retentionDays": 180, "forensicMode": true },
-    "policy": { "enabled": true, "defaultDeny": true, "internalPluginsExempt": true },
-    "killSwitch": { "skills": false, "network": false }
+  "profile": "forensic",
+  "description": "Forensic profile — verbose tracing, all features — requires Safety Gate approval",
+  "safetyGate": "required",
+  "obsidian": {
+    "enabled": true,
+    "autoCapture": {
+      "enabled": true,
+      "mode": "forensic",
+      "minSignalScore": 3
+    },
+    "schedule": {
+      "morningDigest": true,
+      "weeklyVaultScan": true,
+      "vaultCompaction": true
+    }
+  },
+  "finance": {
+    "enabled": true,
+    "newsProvider": "jina",
+    "briefOnMarketEvent": true,
+    "eodBrief": true
+  },
+  "repoScan": {
+    "frequency": "daily",
+    "mode": "deep"
+  },
+  "tracing": {
+    "mode": "verbose"
+  },
+  "budget": {
+    "trackTokens": true,
+    "warnAt": 0.7
   }
 }

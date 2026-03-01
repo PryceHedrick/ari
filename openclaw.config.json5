@@ -34,6 +34,8 @@
       "ari-notion",
       "ari-voice",
       "ari-ops",
+      "ari-obsidian",
+      "ari-finance",
     ],
     entries: {
       "ari-kernel": { enabled: true },
@@ -125,6 +127,29 @@
           tracing: { enabled: true, retentionDays: 30, forensicMode: false },
           policy: { enabled: true, defaultDeny: true, internalPluginsExempt: true },
           killSwitch: { skills: false, network: false },
+        },
+      },
+      "ari-obsidian": {
+        enabled: true,
+        config: {
+          autoCapture: {
+            enabled: true,
+            mode: "summary",
+            minSignalScore: 7,
+            includeChannels: ["*"],
+            excludePatterns: ["sk-", "Bearer ", "api_key=", "password=", "token=", "secret="],
+            retentionDaysFragments: 7,
+          },
+          vault: {
+            path: "${ARI_OBSIDIAN_VAULT_PATH:-~/.ari/obsidian-vault}",
+          },
+        },
+      },
+      "ari-finance": {
+        enabled: true,
+        config: {
+          newsProvider: "${ARI_FINANCE_NEWS_PROVIDER:-rss}",
+          disclaimer: "Informational only. Not financial advice.",
         },
       },
     },

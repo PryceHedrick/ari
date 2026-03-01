@@ -236,7 +236,7 @@ export const CRON_TASKS: CronTask[] = [
   {
     id: "morning-vault-digest",
     cron: "0 5 * * *", // daily 05:00 ET (before 06:30 briefing pre-fetch)
-    description: "DEX reads yesterday's Obsidian daily note → OBSIDIAN-DAILY-DIGEST.md",
+    description: "Obsidian incremental reindex + daily digest + context packs",
     agent: "DEX",
     gate: "auto",
     priority: 3,
@@ -244,8 +244,16 @@ export const CRON_TASKS: CronTask[] = [
   {
     id: "weekly-vault-scan",
     cron: "0 9 * * 1", // Monday 09:00 ET
-    description: "DEX 30-day vault scan → OBSIDIAN-IDEAS-30DAY.md + OBSIDIAN-GAPS.md",
+    description: "Obsidian weekly digest + repo scanner (baseline) + full reindex",
     agent: "DEX",
+    gate: "auto",
+    priority: 3,
+  },
+  {
+    id: "vault-compaction",
+    cron: "30 22 * * *", // 22:30 daily ET — fragment grouping + retention + open-loop aging
+    description: "Vault compaction: group inbox fragments, archive old, age open loops",
+    agent: "ARI",
     gate: "auto",
     priority: 3,
   },

@@ -1,9 +1,34 @@
 {
-  "name": "daily",
-  "description": "Daily profile: lightweight tracing, policy on, 30-day retention",
-  "ari-ops": {
-    "tracing": { "enabled": true, "retentionDays": 30, "forensicMode": false },
-    "policy": { "enabled": true, "defaultDeny": true, "internalPluginsExempt": true },
-    "killSwitch": { "skills": false, "network": false }
+  "profile": "daily",
+  "description": "Default daily-driver profile — auto digests, market events, weekly repo scan, RSS news",
+  "obsidian": {
+    "enabled": true,
+    "autoCapture": {
+      "enabled": true,
+      "mode": "summary",
+      "minSignalScore": 7
+    },
+    "schedule": {
+      "morningDigest": true,
+      "weeklyVaultScan": true,
+      "vaultCompaction": true
+    }
+  },
+  "finance": {
+    "enabled": true,
+    "newsProvider": "rss",
+    "briefOnMarketEvent": true,
+    "eodBrief": false
+  },
+  "repoScan": {
+    "frequency": "weekly",
+    "mode": "baseline"
+  },
+  "tracing": {
+    "mode": "standard"
+  },
+  "budget": {
+    "trackTokens": true,
+    "warnAt": 0.8
   }
 }

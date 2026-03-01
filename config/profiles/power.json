@@ -1,9 +1,34 @@
 {
-  "name": "power",
-  "description": "Power profile: full tracing, strict policy, 90-day retention",
-  "ari-ops": {
-    "tracing": { "enabled": true, "retentionDays": 90, "forensicMode": false },
-    "policy": { "enabled": true, "defaultDeny": true, "internalPluginsExempt": true },
-    "killSwitch": { "skills": false, "network": false }
+  "profile": "power",
+  "description": "Power profile — deep auto-capture, EOD briefs, daily repo scan, Jina news if key set",
+  "obsidian": {
+    "enabled": true,
+    "autoCapture": {
+      "enabled": true,
+      "mode": "structured",
+      "minSignalScore": 5
+    },
+    "schedule": {
+      "morningDigest": true,
+      "weeklyVaultScan": true,
+      "vaultCompaction": true
+    }
+  },
+  "finance": {
+    "enabled": true,
+    "newsProvider": "jina",
+    "briefOnMarketEvent": true,
+    "eodBrief": true
+  },
+  "repoScan": {
+    "frequency": "daily",
+    "mode": "deep"
+  },
+  "tracing": {
+    "mode": "standard"
+  },
+  "budget": {
+    "trackTokens": true,
+    "warnAt": 0.8
   }
 }

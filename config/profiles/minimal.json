@@ -1,9 +1,34 @@
 {
-  "name": "minimal",
-  "description": "Minimal profile: no tracing, no policy enforcement, core plugins only",
-  "ari-ops": {
-    "tracing": { "enabled": false, "retentionDays": 7, "forensicMode": false },
-    "policy": { "enabled": false, "defaultDeny": false, "internalPluginsExempt": true },
-    "killSwitch": { "skills": false, "network": false }
+  "profile": "minimal",
+  "description": "Minimal profile — no auto-capture, manual-only vault, no finance news",
+  "obsidian": {
+    "enabled": false,
+    "autoCapture": {
+      "enabled": false,
+      "mode": "summary",
+      "minSignalScore": 10
+    },
+    "schedule": {
+      "morningDigest": false,
+      "weeklyVaultScan": false,
+      "vaultCompaction": false
+    }
+  },
+  "finance": {
+    "enabled": true,
+    "newsProvider": "none",
+    "briefOnMarketEvent": false,
+    "eodBrief": false
+  },
+  "repoScan": {
+    "frequency": "manual",
+    "mode": "baseline"
+  },
+  "tracing": {
+    "mode": "standard"
+  },
+  "budget": {
+    "trackTokens": false,
+    "warnAt": 1.0
   }
 }
