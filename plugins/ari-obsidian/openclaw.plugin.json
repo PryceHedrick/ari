@@ -1,0 +1,10 @@
+{
+  "id": "ari-obsidian",
+  "name": "ari-obsidian",
+  "description": "ari-obsidian plugin for OpenClaw ARI runtime.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}
