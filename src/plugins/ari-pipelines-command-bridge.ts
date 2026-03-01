@@ -3107,7 +3107,7 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
   api.registerCommand({
     name: "ari-ops-weekly-override",
     description:
-      "Force weekly digest publish with governance gate (usage: [window-hours|window=<hours>] <prefix: reason>)",
+      "Force-publish weekly digest with governance gate (args: [hours] [prefix: reason])",
     acceptsArgs: true,
     handler: withAccessControl({
       runtime,
@@ -3141,7 +3141,7 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
   api.registerCommand({
     name: "ari-ops-alert",
     description:
-      "Emit a manual ops escalation alert (optional: <severity> <message> [source=...] [bu=...] [channel=...])",
+      "Emit a manual ops escalation alert (optional: <severity> <message> [source] [bu])",
     acceptsArgs: true,
     handler: withAccessControl({
       runtime,
@@ -3153,7 +3153,7 @@ export function registerAriPipelinesCommandBridge(api: OpenClawPluginApi): void 
   api.registerCommand({
     name: "ari-ops-ack",
     description:
-      "Acknowledge canary/ops alert ownership (optional: <reason> [source=...] [scope=canary|general] [bu=...] [channel=...])",
+      "Acknowledge canary/ops alert ownership (optional: <reason> [source] [scope] [bu])",
     acceptsArgs: true,
     handler: withAccessControl({
       runtime,
