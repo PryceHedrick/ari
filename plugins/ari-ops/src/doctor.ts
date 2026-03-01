@@ -6,10 +6,18 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { killSwitch } from "./kill-switch.js";
+
+// Resolve better-sqlite3 from the plugin's own node_modules so the native
+// binding matches the Node version used by the gateway (Node 22).
+const _require = createRequire(
+  path.join(fileURLToPath(import.meta.url), "..", "..", "package.json"),
+);
 
 type CheckResult = {
   name: string;
@@ -179,7 +187,7 @@ function checkObsidian(): CheckResult[] {
   if (vaultExists) {
     if (dbExists) {
       try {
-        const Database = require("better-sqlite3") as typeof import("better-sqlite3").default;
+        const Database = _require("better-sqlite3") as typeof import("better-sqlite3").default;
         const db = new Database(dbPath, { readonly: true });
         const { noteCount } = db.prepare("SELECT COUNT(*) as noteCount FROM notes").get() as {
           noteCount: number;
@@ -230,7 +238,7 @@ function checkFinance(): CheckResult[] {
 
   if (dbExists) {
     try {
-      const Database = require("better-sqlite3") as typeof import("better-sqlite3").default;
+      const Database = _require("better-sqlite3") as typeof import("better-sqlite3").default;
       const db = new Database(dbPath, { readonly: true });
       const { watchlistCount } = db
         .prepare("SELECT COUNT(*) as watchlistCount FROM watchlist")
@@ -268,7 +276,7 @@ function checkFeedback(): CheckResult[] {
     return [{ name: "feedback:recent", ok: true, detail: "vault not initialized" }];
   }
   try {
-    const Database = require("better-sqlite3") as typeof import("better-sqlite3").default;
+    const Database = _require("better-sqlite3") as typeof import("better-sqlite3").default;
     const db = new Database(dbPath, { readonly: true });
     const since = new Date(Date.now() - 7 * 86400000).toISOString();
     const { good } = db

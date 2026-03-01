@@ -52,7 +52,7 @@
     "android:run": "cd apps/android && ./gradlew :app:installDebug && adb shell am start -n ai.openclaw.android/.MainActivity",
     "android:test": "cd apps/android && ./gradlew :app:testDebugUnitTest",
     "ari:config:check": "node --import tsx scripts/config/validate.ts",
-    "ari:doctor": "node --import tsx scripts/ari-doctor-cli.ts",
+    "ari:doctor": "/opt/homebrew/opt/node@22/bin/node --import tsx scripts/ari-doctor-cli.ts",
     "ari:rollback": "bash scripts/skill_audit/rollback.sh",
     "ari:traces": "node --import tsx scripts/ari-traces-cli.ts",
     "ari:validate": "node --import tsx scripts/validate-ari-plugin-contracts.ts",

@@ -3,9 +3,42 @@
  *
  * Runs a full health check and prints a human-readable report.
  * Optionally probes the gateway HTTP endpoint (pass --gateway flag).
+ *
+ * Loads ~/.openclaw/.env before checks so API key presence matches the
+ * running gateway (which sources the same file via ari-start-wrapper.sh).
  */
 
+import { readFileSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 import { runDoctor } from "../plugins/ari-ops/src/doctor.js";
+
+// Load .env so provider checks reflect the same env as the running gateway.
+const ENV_PATH = path.join(homedir(), ".openclaw", ".env");
+if (existsSync(ENV_PATH)) {
+  const lines = readFileSync(ENV_PATH, "utf8").split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Skip comments, empty lines, and export-only declarations
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const withoutExport = trimmed.startsWith("export ") ? trimmed.slice(7) : trimmed;
+    const eq = withoutExport.indexOf("=");
+    if (eq === -1) {
+      continue;
+    }
+    const key = withoutExport.slice(0, eq).trim();
+    const val = withoutExport
+      .slice(eq + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    // Only set if not already in environment (shell takes precedence)
+    if (key && !process.env[key]) {
+      process.env[key] = val;
+    }
+  }
+}
 
 const probeGw = process.argv.includes("--gateway");
 
