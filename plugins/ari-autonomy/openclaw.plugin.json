@@ -1,0 +1,10 @@
+{
+  "id": "ari-autonomy",
+  "name": "ari-autonomy",
+  "description": "Supervised autonomy: AUTO/APPROVAL/BLOCKED lanes, ledger, dedupe, pipeline bridges.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}
