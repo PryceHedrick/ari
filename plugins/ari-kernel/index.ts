@@ -6,12 +6,13 @@ import { registerKernelGuards } from "./src/sanitizer.js";
 /**
  * ARI Kernel Plugin — Security boundary for all OpenClaw messages.
  *
- * 63-pattern injection detection + SHA-256 audit chain.
+ * 63-pattern injection detection across 27 categories.
  *
  * Security invariants (IMMUTABLE):
  * 1. All input sanitized before reaching agent
  * 2. Auto-block at risk score >= 0.8
- * 3. SHA-256 hash-chained audit log (append-only)
+ * 3. Trace store is SQLite WAL (append-only rows) — cryptographic hash-chain is not yet implemented
+ *    // TODO: implement SHA-256 hash-chained audit trail (Phase 4)
  * 4. Trust multipliers: SYSTEM 0.5x / HOSTILE 2.0x
  * 5. API keys must be sk_or_* (OpenRouter) or sk-ant-* (Anthropic API only)
  *    Subscription OAuth tokens are PROHIBITED per Anthropic ToS Section 3.7
@@ -35,7 +36,7 @@ const plugin = {
   id: "ari-kernel",
   name: "ARI Kernel",
   description:
-    "Security boundary: 63-pattern injection detection (27 categories) + SHA-256 audit chain",
+    "Security boundary: 63-pattern injection detection across 27 categories (risk scoring + auto-block)",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi): void {
     // Section 12.1: Validate API key format at startup

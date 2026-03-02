@@ -604,6 +604,28 @@ export function assessPromptRisk(
   return { score, flags, blocked: score >= AUTO_BLOCK_THRESHOLD };
 }
 
+// === BUILD-PLANE (RUNE) TOOL RESTRICTION ===
+// RUNE operates in the engineering isolation plane and must not access
+// business/financial tools. Enforced here as a defense-in-depth layer.
+
+const BUILD_PLANE_BLOCKED_TOOLS = new Set([
+  "ari_finance_market_brief",
+  "ari_finance_watchlist_add",
+  "ari_finance_watchlist_remove",
+  "ari_finance_watchlist_list",
+  "ari_finance_ticker_detail",
+  "ari_finance_sentiment",
+  "ari_finance_forecast",
+  "ari_finance_report",
+  "ari_finance_signal_update",
+  "ari_finance_news_fetch",
+  "ari_obsidian_capture",
+  "ari_obsidian_digest_daily",
+  "ari_obsidian_digest_weekly",
+  "ari_autonomy_mode",
+  "ari_autonomy_approvals",
+]);
+
 // === HIGH-RISK TOOL GATE ===
 
 const HIGH_RISK_TOOLS = new Set([
@@ -683,6 +705,21 @@ export function registerKernelGuards(api: OpenClawPluginApi): void {
   });
 
   api.on("before_tool_call", (event): ToolCallResult | undefined => {
+    // BUILD-plane isolation: RUNE must not call business/financial tools
+    const agentName =
+      typeof (event as Record<string, unknown>).agentName === "string"
+        ? ((event as Record<string, unknown>).agentName as string)
+        : undefined;
+    if (agentName === "RUNE") {
+      const toolName = (event as ToolCallEvent).toolName.trim().toLowerCase();
+      if (BUILD_PLANE_BLOCKED_TOOLS.has(toolName)) {
+        return {
+          block: true,
+          blockReason: `[ARI-KERNEL-SECURITY] BUILD-plane agent RUNE blocked from business tool: ${toolName}`,
+        };
+      }
+    }
+
     const verdict = shouldBlockToolCall(event as ToolCallEvent);
     if (!verdict.block) {
       return undefined;

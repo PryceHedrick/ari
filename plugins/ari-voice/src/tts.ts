@@ -103,6 +103,15 @@ export async function synthesizeSpeech(request: TTSRequest): Promise<TTSResult> 
 
   const url = `${ELEVENLABS_API_BASE}/text-to-speech/${voiceId}`;
 
+  // Defense-in-depth: verify hostname before sending API key or audio data
+  const urlHostname = new URL(url).hostname;
+  if (urlHostname !== "api.elevenlabs.io") {
+    return {
+      success: false,
+      error: `[ARI-VOICE] TTS fetch denied: unexpected domain ${urlHostname}`,
+    };
+  }
+
   let response: Response;
   try {
     response = await fetch(url, {

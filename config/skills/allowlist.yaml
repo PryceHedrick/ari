@@ -1,4 +1,25 @@
 version: 1
+
+# BUILD-plane agents (RUNE) are restricted from business/finance tools.
+# These tools operate on Pryce's personal/financial data and must not be
+# accessible from the engineering isolation plane.
+build_plane_blocklist:
+  - ari_finance_market_brief
+  - ari_finance_watchlist_add
+  - ari_finance_watchlist_remove
+  - ari_finance_watchlist_list
+  - ari_finance_ticker_detail
+  - ari_finance_sentiment
+  - ari_finance_forecast
+  - ari_finance_report
+  - ari_finance_signal_update
+  - ari_finance_news_fetch
+  - ari_obsidian_capture
+  - ari_obsidian_digest_daily
+  - ari_obsidian_digest_weekly
+  - ari_autonomy_mode
+  - ari_autonomy_approvals
+
 note: >
   First-party ARI skills (obsidian-second-brain, ari-finance-suite) are internal tier
   and self-enforce resource boundaries via assertVaultPath() and assertNetworkDomain().
