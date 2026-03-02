@@ -5,8 +5,8 @@
  * Emits as ari:trace:event for routing to Discord by ari-discord-event-router.
  */
 
-import { ariBus } from "../../../ari-shared/src/event-bus.js";
-import { assertLlmAllowed } from "../../../ari-shared/src/task-policy-store.js";
+import { ariBus } from "../../ari-shared/src/event-bus.js";
+import { assertLlmAllowed } from "../../ari-shared/src/task-policy-store.js";
 import { getPendingApprovalsCount, expireStaleApprovals } from "./approvals.js";
 import { queryLedger, getDeadLetterCount } from "./ledger.js";
 import { upsertLedger } from "./ledger.js";
