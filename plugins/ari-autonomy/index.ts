@@ -118,21 +118,17 @@ const plugin = {
     // Catch-up on startup (one leader instance only)
     runStartupCatchup();
 
-    // ── /mode command ──────────────────────────────────────────────────────
-    api.registerTool?.({
-      name: "ari_autonomy_mode",
-      label: "Autonomy Mode",
-      description: "Get or set ARI autonomy mode (auto / supervised / paused). Max 97 chars desc.",
-      parameters: Type.Object({
-        mode: Type.Optional(
-          Type.String({ description: "New mode: auto | supervised | paused. Omit to read." }),
-        ),
-      }),
-      execute: async (_toolCallId, params) => {
-        const { mode } = params as { mode?: string };
+    // ── /ari-mode command ──────────────────────────────────────────────────
+    api.registerCommand({
+      name: "ari-mode",
+      description: "Get or set autonomy mode: auto | supervised | paused",
+      acceptsArgs: true,
+      requireAuth: true,
+      handler: async (ctx) => {
+        const mode = ctx.args?.trim().toLowerCase();
         if (mode) {
           if (!["auto", "supervised", "paused"].includes(mode)) {
-            return jsonResult({ error: `Invalid mode: ${mode}. Use auto | supervised | paused.` });
+            return `Invalid mode: \`${mode}\`. Use \`auto\` | \`supervised\` | \`paused\`.`;
           }
           writeAutonomyMode(mode as AutonomyMode, "slash-command");
           ariBus.emit("ari:trace:event", {
@@ -140,53 +136,71 @@ const plugin = {
             newMode: mode,
             ts: new Date().toISOString(),
           });
-          return jsonResult({ ok: true, mode, message: `Autonomy mode set to: ${mode}` });
+          return `Autonomy mode set to **${mode.toUpperCase()}**`;
         }
         const { mode: current, source } = readAutonomyMode();
-        return jsonResult({ mode: current, source });
+        return `Autonomy mode: **${current.toUpperCase()}** (source: ${source})`;
       },
     });
 
-    // ── /status tool ───────────────────────────────────────────────────────
-    api.registerTool?.({
-      name: "ari_autonomy_status",
-      label: "Autonomy Status",
-      description: "ARI system status: mode, last 5 runs, next 5 tasks, pending approvals count.",
-      parameters: Type.Object({}),
-      execute: async (_toolCallId, _params) => {
+    // ── /ari-status command ────────────────────────────────────────────────
+    api.registerCommand({
+      name: "ari-status",
+      description: "ARI system status: mode, recent runs, pending approvals",
+      acceptsArgs: false,
+      requireAuth: true,
+      handler: async () => {
         const { mode, source } = readAutonomyMode();
         const runnerId = process.env.ARI_RUNNER_ID ?? "unknown";
         const recent = queryLedger({ limit: 5 });
         const pending = getPendingApprovalsCount();
         const deadLetter = getDeadLetterCount();
 
-        // Next 5 upcoming tasks (static schedule — simplified)
-        const nextTasks = CRON_TASKS.slice(0, 5).map((t) => ({
-          id: t.id,
-          agent: t.agent,
-          gate: t.gate,
-          priority: t.priority,
-        }));
+        const last5 = recent.length
+          ? recent
+              .map((r) => `  • ${r.task_id} → **${r.status}**${r.summary ? ` (${r.summary})` : ""}`)
+              .join("\n")
+          : "  (none yet)";
 
-        return jsonResult({
-          mode,
-          modeSource: source,
-          runnerId,
-          last5: recent.map((r) => ({
-            taskId: r.task_id,
-            status: r.status,
-            lane: r.lane,
-            summary: r.summary,
-            finishedAt: r.finished_at,
-          })),
-          next5: nextTasks,
-          pendingApprovals: pending,
-          deadLetterCount: deadLetter,
-        });
+        const nextTasks = CRON_TASKS.slice(0, 5)
+          .map((t) => `  • ${t.id}`)
+          .join("\n");
+
+        return [
+          `🤖 **ARI Autonomy Status**`,
+          `Mode: **${mode.toUpperCase()}** (${source}) | Runner: \`${runnerId}\``,
+          ``,
+          `**Last 5 runs:**\n${last5}`,
+          ``,
+          `**Next 5 scheduled:**\n${nextTasks}`,
+          ``,
+          `⏳ Pending approvals: **${pending}** | 💀 Dead-letter: **${deadLetter}**`,
+        ].join("\n");
       },
     });
 
-    // ── /approvals tool ────────────────────────────────────────────────────
+    // ── /ari-approvals command ─────────────────────────────────────────────
+    api.registerCommand({
+      name: "ari-approvals",
+      description: "List pending ARI approval cards",
+      acceptsArgs: false,
+      requireAuth: true,
+      handler: async () => {
+        expireStaleApprovals();
+        const { getPendingApprovals } = await import("./src/approvals.js");
+        const pending = getPendingApprovals();
+        if (pending.length === 0) {
+          return "No pending approvals.";
+        }
+        const lines = pending.map(
+          (a) =>
+            `  • \`${a.approval_id.slice(0, 8)}\` **${a.task_id}** — ${a.lane_reason} (risk: ${a.risk_level}) requested <t:${Math.floor(a.requested_at / 1000)}:R>`,
+        );
+        return [`**${pending.length} pending approval(s):**`, ...lines].join("\n");
+      },
+    });
+
+    // (keeping registerTool stubs for agent tool access — separate from slash commands)
     api.registerTool?.({
       name: "ari_autonomy_approvals",
       label: "Pending Approvals",
