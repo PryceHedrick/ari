@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { inspect } from "node:util";
 import {
   Client,
@@ -229,6 +230,18 @@ function isDiscordDisallowedIntentsError(err: unknown): boolean {
 }
 
 export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
+  // Stamp a unique runner ID at process startup — used for cross-instance deduplication.
+  // Format: "ari:<port>:<build7>:<nonce4>"
+  if (!process.env.ARI_RUNNER_ID) {
+    const build7 = createHash("sha256")
+      .update(process.env.npm_package_version ?? "dev")
+      .digest("hex")
+      .slice(0, 7);
+    const nonce4 = randomBytes(2).toString("hex");
+    const port = process.env.ARI_GATEWAY_PORT ?? "3141";
+    process.env.ARI_RUNNER_ID = `ari:${port}:${build7}:${nonce4}`;
+  }
+
   const cfg = opts.config ?? loadConfig();
   const account = resolveDiscordAccount({
     cfg,

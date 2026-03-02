@@ -17,6 +17,10 @@ export type CronTask = {
   channel?: string; // Discord channel if posting output
   gate: "auto" | "approval-required" | "operator-only";
   priority: 0 | 1 | 2 | 3; // P0=critical, P3=background
+  // LLM policy: "forbidden" = purely mechanical (no model call allowed),
+  // "allowed" (default) = agent dispatch permitted.
+  // Only mark "forbidden" for tasks confirmed to be mechanical (no summarization/generation).
+  llmPolicy?: "forbidden" | "allowed";
 };
 
 /**
@@ -33,6 +37,7 @@ export const CRON_TASKS: CronTask[] = [
     agent: "system",
     gate: "auto",
     priority: 0,
+    llmPolicy: "forbidden", // Confirmed mechanical: DB write + trace log only
   },
   {
     id: "daily-backup",
@@ -41,6 +46,7 @@ export const CRON_TASKS: CronTask[] = [
     agent: "system",
     gate: "auto",
     priority: 2,
+    llmPolicy: "forbidden", // Confirmed mechanical: log + backup trigger only
   },
 
   // === PULSE MARKET TASKS (PULSE 📡) ===

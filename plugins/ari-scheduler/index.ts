@@ -2,6 +2,7 @@ import { Cron } from "croner";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { ariBus } from "../ari-shared/src/event-bus.js";
+import { taskPolicyStore } from "../ari-shared/src/task-policy-store.js";
 import { CRON_TASKS, getTasksByAgent, getCriticalTasks } from "./src/cron-tasks.js";
 
 /**
@@ -43,12 +44,19 @@ const plugin = {
               { timezone: "America/New_York", protect: true, catch: true },
               () => {
                 log.info(`[ari-scheduler] firing task: ${task.id} (agent=${task.agent})`);
-                ariBus.emit("ari:scheduler:task", {
+                // Wrap in ALS context so handlers can call assertLlmAllowed()
+                const policyCtx = {
                   taskId: task.id,
-                  agent: task.agent,
-                  channel: task.channel,
-                  gate: task.gate,
-                  priority: task.priority,
+                  llmPolicy: task.llmPolicy ?? "allowed",
+                } as const;
+                taskPolicyStore.run(policyCtx, () => {
+                  ariBus.emit("ari:scheduler:task", {
+                    taskId: task.id,
+                    agent: task.agent,
+                    channel: task.channel,
+                    gate: task.gate,
+                    priority: task.priority,
+                  });
                 });
               },
             );
