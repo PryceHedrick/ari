@@ -2,7 +2,7 @@
  * ARI ValueScorer — Intelligent model routing for all LLM calls
  *
  * Routing priority (highest to lowest):
- *   1. CODEX plane → RUNE_PRIMARY_MODEL (engineering context)
+ *   1. BUILD plane → RUNE_PRIMARY_MODEL (engineering context)
  *   2. Named agent → task-type-aware multi-tier routing
  *      ARI:   Sonnet default; Opus for deep/high-stakes (stakes≥85 or complexity≥80)
  *      ARI-DEEP: always Opus
@@ -36,7 +36,10 @@
 
 export type ModelTier = "opus" | "sonnet" | "haiku";
 export type ResearchDepth = "deep" | "reasoning" | "pro" | "basic";
-export type ContextPlane = "apex" | "codex";
+// Canonical plane names: "mission" (business context) | "build" (engineering only).
+// Legacy values "zoe"/"apex" → "mission", "codex" → "build" via normalizePlane().
+// Note: "build" plane ≠ "openai-codex" model — they are unrelated.
+export type ContextPlane = "mission" | "build";
 
 export type TaskContext = {
   agentName?: string;
@@ -253,7 +256,7 @@ function applyCapabilityFallbacks(route: ModelRoute): ModelRoute {
 
 /**
  * Route a task to the best model.
- * Priority: CODEX → named agent (task-type-aware) → engineering → research → long-context → ValueScore
+ * Priority: BUILD → named agent (task-type-aware) → engineering → research → long-context → ValueScore
  * All routes pass through applyCapabilityFallbacks before returning.
  */
 export function routeToModel(ctx: TaskContext): ModelRoute {
@@ -261,14 +264,14 @@ export function routeToModel(ctx: TaskContext): ModelRoute {
 }
 
 function resolveModel(ctx: TaskContext): ModelRoute {
-  // 0. CODEX plane fast-path — always routes to RUNE_PRIMARY_MODEL
-  if (ctx.plane === "codex") {
+  // 0. BUILD plane fast-path — always routes to RUNE_PRIMARY_MODEL (engineering context)
+  if (ctx.plane === "build") {
     const runeEnv = process.env.RUNE_PRIMARY_MODEL ?? "anthropic/claude-sonnet-4-6";
     const { provider, modelName } = parseRuneModelEnv(runeEnv);
     return {
       provider,
       model: modelName,
-      reason: "CODEX plane → RUNE primary model (engineering)",
+      reason: "BUILD plane → RUNE primary model (engineering)",
     };
   }
 

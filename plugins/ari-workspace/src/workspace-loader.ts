@@ -4,17 +4,17 @@ import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 /**
- * ARI Workspace Loader — APEX/CODEX Plane Enforcement
+ * ARI Workspace Loader — MISSION/BUILD Plane Enforcement
  *
- * APEX Plane (ARI, NOVA, CHASE, PULSE, DEX — full business context):
+ * MISSION Plane (ARI, NOVA, CHASE, PULSE, DEX — full business context):
  *   Receives: agent SOUL.md + full workspace files
  *             (SOUL / USER / HEARTBEAT / GOALS / AGENTS / MEMORY / RECOVERY)
  *
- * CODEX Plane (RUNE — engineering only, NO business context):
+ * BUILD Plane (RUNE — engineering only, NO business context):
  *   Receives: AGENTS.md (repo conventions) ONLY
  *   PROHIBITED: SOUL files, USER.md, HEARTBEAT.md, GOALS.md, MEMORY.md, personal data
  *
- * Note: "CODEX plane" = context isolation concept. Not named after any AI model.
+ * Note: "BUILD plane" = context isolation concept. Unrelated to the openai-codex model.
  *
  * Workspace path: ~/.ari/workspace/
  * Agent SOUL files: ~/.ari/workspace/agents/{agentName}/SOUL.md
@@ -23,10 +23,10 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 const ARI_WORKSPACE_DIR = path.join(os.homedir(), ".ari", "workspace");
 const AGENTS_DIR = path.join(ARI_WORKSPACE_DIR, "agents");
 
-// APEX plane: full business context (all 7 workspace files)
+// MISSION plane: full business context (all 7 workspace files)
 // IMPORTANT: Stable files must precede HEARTBEAT.md (dynamic timestamps) for prompt cache hits.
 // Cache order: stable → semi-stable → dynamic. HEARTBEAT.md MUST be last.
-const ZOE_WORKSPACE_FILES = [
+const MISSION_WORKSPACE_FILES = [
   "SOUL.md", // Stable — rarely changes
   "USER.md", // Stable — weekly update at most
   "GOALS.md", // Stable — monthly updates
@@ -36,14 +36,14 @@ const ZOE_WORKSPACE_FILES = [
   "HEARTBEAT.md", // DYNAMIC — contains timestamps → MUST BE LAST
 ];
 
-// CODEX plane: repo conventions only (NO personal/business context)
-const CODEX_WORKSPACE_FILES = ["AGENTS.md"];
+// BUILD plane: repo conventions only (NO personal/business context)
+const BUILD_WORKSPACE_FILES = ["AGENTS.md"];
 
-// CODEX plane agents — engineering only, never receive business context
-const CODEX_AGENTS = new Set(["rune", "RUNE"]);
+// BUILD plane agents — engineering only, never receive business context
+const BUILD_AGENTS = new Set(["rune", "RUNE"]);
 
-// Named APEX agents with their own SOUL files
-const NAMED_ZOE_AGENTS = new Set([
+// Named MISSION agents with their own SOUL files
+const NAMED_MISSION_AGENTS = new Set([
   "ari",
   "ARI",
   "nova",
@@ -99,16 +99,16 @@ function readFileSnippet(filePath: string): string | null {
 
 /**
  * Detect which context plane applies based on agent name.
- * CODEX plane agents get only repo conventions (AGENTS.md).
+ * BUILD plane agents get only repo conventions (AGENTS.md).
  */
-function detectPlane(agentName: string | undefined): "zoe" | "codex" {
+function detectPlane(agentName: string | undefined): "mission" | "build" {
   if (!agentName) {
-    return "zoe";
+    return "mission";
   }
-  if (CODEX_AGENTS.has(agentName)) {
-    return "codex";
+  if (BUILD_AGENTS.has(agentName)) {
+    return "build";
   }
-  return "zoe";
+  return "mission";
 }
 
 // SOUL files are prohibited for CODEX plane agents — business/personal data boundary
@@ -122,20 +122,20 @@ const SOUL_FILES = new Set([
 ]);
 
 /**
- * Enforce ZOE/CODEX plane boundaries.
- * Throws if CODEX agent would receive prohibited SOUL/business context.
+ * Enforce MISSION/BUILD plane boundaries.
+ * Throws if BUILD agent would receive prohibited SOUL/business context.
  * Allows .ts/.md task-spec files (engineering context for RUNE).
  */
 export function validateContextBundlePlane(agentName: string | undefined, files: string[]): void {
-  if (!agentName || detectPlane(agentName) !== "codex") {
+  if (!agentName || detectPlane(agentName) !== "build") {
     return;
   }
   const hasSoulFiles = files.some((f) => SOUL_FILES.has(f));
   if (hasSoulFiles) {
     const violations = files.filter((f) => SOUL_FILES.has(f)).join(", ");
     throw new Error(
-      `[ARI-GOVERNANCE] CODEX plane violation: RUNE cannot receive ${violations}. ` +
-        "CODEX agents receive AGENTS.md only. Business context, SOUL files, and personal data are PROHIBITED.",
+      `[ARI-GOVERNANCE] BUILD plane violation: RUNE cannot receive ${violations}. ` +
+        "BUILD agents receive AGENTS.md only. Business context, SOUL files, and personal data are PROHIBITED.",
     );
   }
 }
@@ -176,12 +176,12 @@ export function registerWorkspaceHooks(api: OpenClawPluginApi): void {
 
     // Select workspace files based on plane
     let files: string[];
-    if (plane === "codex") {
-      files = CODEX_WORKSPACE_FILES;
+    if (plane === "build") {
+      files = BUILD_WORKSPACE_FILES;
     } else if (workspaceCfg.files && workspaceCfg.files.length > 0) {
       files = workspaceCfg.files;
     } else {
-      files = ZOE_WORKSPACE_FILES;
+      files = MISSION_WORKSPACE_FILES;
     }
 
     // Enforce plane boundaries — throw on violation (emit security event before re-throwing)
@@ -199,8 +199,8 @@ export function registerWorkspaceHooks(api: OpenClawPluginApi): void {
 
     const sections: string[] = [];
 
-    // APEX plane: inject named agent's SOUL.md first (if available)
-    if (plane === "zoe" && agentName && NAMED_ZOE_AGENTS.has(agentName)) {
+    // MISSION plane: inject named agent's SOUL.md first (if available)
+    if (plane === "mission" && agentName && NAMED_MISSION_AGENTS.has(agentName)) {
       const soulFile = loadAgentSoulFile(agentName);
       if (soulFile) {
         sections.push(`### AGENT-SOUL: ${agentName.toUpperCase()}\n${soulFile}`);
@@ -217,7 +217,7 @@ export function registerWorkspaceHooks(api: OpenClawPluginApi): void {
       return undefined;
     }
 
-    const planeLabel = plane === "codex" ? "[ARI-CODEX-CONTEXT]" : "[ARI-APEX-CONTEXT]";
+    const planeLabel = plane === "build" ? "[ARI-BUILD-CONTEXT]" : "[ARI-MISSION-CONTEXT]";
     return {
       prependContext: [planeLabel, sections.join("\n\n")].join("\n\n"),
     };

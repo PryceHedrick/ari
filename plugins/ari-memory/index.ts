@@ -98,34 +98,37 @@ const plugin = {
       name: "ari_workspace_load",
       label: "Load Workspace Context",
       description:
-        "Load workspace files (SOUL, USER, HEARTBEAT, GOALS, AGENTS, MEMORY, RECOVERY) into context. ZOE plane = all 7 files. CODEX plane (RUNE) = AGENTS.md only.",
+        "Load workspace files (SOUL, USER, HEARTBEAT, GOALS, AGENTS, MEMORY, RECOVERY) into context. MISSION plane = all 7 files. BUILD plane (RUNE) = AGENTS.md only.",
       parameters: Type.Object({
         agentName: Type.Optional(
-          Type.String({ description: "Agent name for SOUL file loading (ZOE plane only)" }),
+          Type.String({ description: "Agent name for SOUL file loading (MISSION plane only)" }),
         ),
         plane: Type.Optional(
           Type.String({
             description:
-              "Context isolation plane: 'zoe' = full business context, 'codex' = engineering only",
+              "Context isolation plane: 'mission' = full business context, 'build' = engineering only",
           }),
         ),
       }),
       execute: async (_toolCallId, params) => {
-        const { agentName, plane } = params as { agentName?: string; plane?: "zoe" | "codex" };
+        const { agentName, plane } = params as {
+          agentName?: string;
+          plane?: "mission" | "build";
+        };
 
-        // CODEX enforcement: RUNE always gets codex plane regardless of request
-        const CODEX_AGENTS = ["rune", "RUNE"];
-        const isCodexAgent = agentName !== undefined && CODEX_AGENTS.includes(agentName);
+        // BUILD enforcement: RUNE always gets build plane regardless of request
+        const BUILD_AGENTS = ["rune", "RUNE"];
+        const isBuildAgent = agentName !== undefined && BUILD_AGENTS.includes(agentName);
 
-        // Reject explicit ZOE request from CODEX agent — security gate
-        if (isCodexAgent && plane === "zoe") {
+        // Reject explicit MISSION request from BUILD agent — security gate
+        if (isBuildAgent && plane === "mission") {
           throw new Error(
-            `[ARI-GOVERNANCE] CODEX plane violation: ${agentName} requested ZOE context. ` +
-              "RUNE/CODEX agents NEVER receive ZOE context — request rejected.",
+            `[ARI-GOVERNANCE] BUILD plane violation: ${agentName} requested MISSION context. ` +
+              "RUNE/BUILD agents NEVER receive MISSION context — request rejected.",
           );
         }
 
-        const effectivePlane: "zoe" | "codex" = isCodexAgent ? "codex" : (plane ?? "zoe");
+        const effectivePlane: "mission" | "build" = isBuildAgent ? "build" : (plane ?? "mission");
         const result = loadWorkspaceContext(agentName, effectivePlane);
         return jsonResult(result);
       },

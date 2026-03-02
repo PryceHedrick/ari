@@ -155,7 +155,7 @@ function createSchema(db: DatabaseInstance): void {
       name        TEXT PRIMARY KEY,
       emoji       TEXT NOT NULL,
       role        TEXT NOT NULL,
-      plane       TEXT NOT NULL DEFAULT 'zoe',
+      plane       TEXT NOT NULL DEFAULT 'mission',
       model       TEXT NOT NULL,
       status      TEXT NOT NULL DEFAULT 'active',
       last_seen   TEXT,
@@ -163,6 +163,10 @@ function createSchema(db: DatabaseInstance): void {
       created_at  TEXT NOT NULL
     )
   `).run();
+
+  // Migrate legacy plane values to canonical names (idempotent — runs on every open)
+  db.prepare("UPDATE agent_registry SET plane = 'mission' WHERE plane IN ('zoe', 'apex')").run();
+  db.prepare("UPDATE agent_registry SET plane = 'build' WHERE plane = 'codex'").run();
 
   db.prepare(
     "CREATE INDEX IF NOT EXISTS idx_p1_feedback_timestamp    ON p1_feedback(timestamp)",
@@ -674,7 +678,7 @@ export interface AgentRegistryRecord {
   name: string;
   emoji: string;
   role: string;
-  plane: "zoe" | "codex";
+  plane: "mission" | "build";
   model: string;
   status: "active" | "idle" | "error";
   last_seen?: string;

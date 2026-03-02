@@ -3,43 +3,45 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 /**
  * ARI Named Agent Coordinator
  *
- * ZOE plane (full business context — SOUL files + workspace + goals):
+ * MISSION plane (full business context — SOUL files + workspace + goals):
  *   ARI   🧠  claude-opus-4-6    CFO / Meta-Orchestrator
  *   NOVA  🎬  claude-sonnet-4-6  P1 Content Creator (PayThePryce)
  *   CHASE 🎯  claude-sonnet-4-6  P2 Lead Connector (Pryceless Solutions)
  *   PULSE 📡  claude-haiku-4-5   Market Analyst
  *   DEX   🗂️  claude-haiku-4-5   Research Scout
  *
- * CODEX plane (engineering only — task spec + AGENTS.md, NO SOUL files, NO business context):
+ * BUILD plane (engineering only — task spec + AGENTS.md, NO SOUL files, NO business context):
  *   RUNE  🔧  claude-sonnet-4-6  Engineering Builder
  *
  * Model routing is handled exclusively by ari-ai (ValueScorer + AGENT_PROFILES).
  * This module owns: registry, capability cards, plane enforcement.
+ *
+ * Note: "build" plane name ≠ "openai-codex" model or RUNE_CODEX_AVAILABLE env var.
+ * The plane isolates context; the model is selected separately by value-scorer.ts.
  */
 
 // Context plane for each agent:
-//   "zoe"   = full business context (ZOE plane): ARI, NOVA, CHASE, PULSE, DEX
-//   "codex" = engineering context only (CODEX plane): RUNE only
-//   Note: "codex" plane name ≠ "OpenAI Codex" model. The plane isolates context, not model choice.
+//   "mission" = full business context (MISSION plane): ARI, NOVA, CHASE, PULSE, DEX
+//   "build"   = engineering context only (BUILD plane): RUNE only
 type AgentProfile = {
   name: string;
   emoji: string;
   role: string;
-  plane: "zoe" | "codex";
+  plane: "mission" | "build";
 };
 
 // Named agent registry — the six members of Pryce's empire
 export const NAMED_AGENTS: Record<string, AgentProfile> = {
-  ARI: { name: "ARI", emoji: "🧠", role: "CFO / Meta-Orchestrator", plane: "zoe" },
-  NOVA: { name: "NOVA", emoji: "🎬", role: "P1 Content Creator", plane: "zoe" },
-  CHASE: { name: "CHASE", emoji: "🎯", role: "P2 Lead Connector", plane: "zoe" },
-  PULSE: { name: "PULSE", emoji: "📡", role: "Market Analyst", plane: "zoe" },
-  DEX: { name: "DEX", emoji: "🗂️", role: "Research Scout", plane: "zoe" },
-  RUNE: { name: "RUNE", emoji: "🔧", role: "Engineering Builder", plane: "codex" },
+  ARI: { name: "ARI", emoji: "🧠", role: "CFO / Meta-Orchestrator", plane: "mission" },
+  NOVA: { name: "NOVA", emoji: "🎬", role: "P1 Content Creator", plane: "mission" },
+  CHASE: { name: "CHASE", emoji: "🎯", role: "P2 Lead Connector", plane: "mission" },
+  PULSE: { name: "PULSE", emoji: "📡", role: "Market Analyst", plane: "mission" },
+  DEX: { name: "DEX", emoji: "🗂️", role: "Research Scout", plane: "mission" },
+  RUNE: { name: "RUNE", emoji: "🔧", role: "Engineering Builder", plane: "build" },
 };
 
 /**
- * Validate ZOE/CODEX plane context enforcement.
+ * Validate MISSION/BUILD plane context enforcement.
  * Called at agent spawn time — throws on violation.
  */
 export function validateContextBundlePlane(
@@ -51,7 +53,7 @@ export function validateContextBundlePlane(
   }
   const name = agentName.toUpperCase();
   const profile = NAMED_AGENTS[name];
-  if (!profile || profile.plane !== "codex") {
+  if (!profile || profile.plane !== "build") {
     return;
   }
 
@@ -84,15 +86,15 @@ export function validateContextBundlePlane(
     // Emit security audit signal before throwing — interceptable by OpenClaw error boundary
     console.error(
       JSON.stringify({
-        event: "security:codex-violation-attempt",
+        event: "security:build-plane-violation-attempt",
         agent: name,
         prohibitedFiles: violations,
         timestamp: new Date().toISOString(),
       }),
     );
     throw new Error(
-      `[ARI-GOVERNANCE] CODEX plane violation for ${name}: PROHIBITED files detected: ${violations}. ` +
-        "RUNE/CODEX agents NEVER receive SOUL files, workspace files, or business context.",
+      `[ARI-GOVERNANCE] BUILD plane violation for ${name}: PROHIBITED files detected: ${violations}. ` +
+        "RUNE/BUILD agents NEVER receive SOUL files, workspace files, or business context.",
     );
   }
 }
@@ -101,13 +103,13 @@ export function validateContextBundlePlane(
 
 /**
  * ContextBundle — formalized context transfer contract (Section 29.8).
- * Enforces ZOE/CODEX plane isolation at agent spawn time.
+ * Enforces MISSION/BUILD plane isolation at agent spawn time.
  *
- * ZOE agents:   SOUL file + workspace context + task spec (20-30K token budget)
- * CODEX agents: task spec + AGENTS.md only (5K token budget — NO SOUL files)
+ * MISSION agents: SOUL file + workspace context + task spec (20-30K token budget)
+ * BUILD agents:   task spec + AGENTS.md only (5K token budget — NO SOUL files)
  */
 export interface ContextBundle {
-  plane: "zoe" | "codex";
+  plane: "mission" | "build";
   soulFile?: string; // ZOE only — agent SOUL.md content
   taskSpec: string; // What to build + success criteria
   workingMemory: {
@@ -128,8 +130,8 @@ export function validateContextBundle(bundle: ContextBundle, agentName: string):
   if (!profile) {
     throw new Error(`[ARI] Unknown agent: ${agentName}`);
   }
-  if (profile.plane === "codex" && bundle.soulFile) {
-    throw new Error(`[ARI-GOVERNANCE] CODEX plane: soulFile prohibited for ${agentName}`);
+  if (profile.plane === "build" && bundle.soulFile) {
+    throw new Error(`[ARI-GOVERNANCE] BUILD plane: soulFile prohibited for ${agentName}`);
   }
   if (bundle.tokenBudget > 100_000) {
     throw new Error(`[ARI] Token budget ${bundle.tokenBudget} exceeds 100K max`);
@@ -144,7 +146,7 @@ export interface AgentCapabilityCard {
   emoji: string;
   capabilities: Record<string, number>; // task_type → confidence (0-1)
   currentLoad: { queued: number; maxCapacity: number };
-  plane: "zoe" | "codex";
+  plane: "mission" | "build";
   tools: string[];
   estimatedLatency: { [taskType: string]: string }; // '2-5min', '<1min', etc.
 }
@@ -162,7 +164,7 @@ const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
       briefing_synthesis: 0.93,
     },
     currentLoad: { queued: 0, maxCapacity: 5 },
-    plane: "zoe",
+    plane: "mission",
     tools: ["all"],
     estimatedLatency: { orchestration: "<30s", governance: "<1min" },
   },
@@ -179,7 +181,7 @@ const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
       lead_qualification: 0.3,
     },
     currentLoad: { queued: 0, maxCapacity: 10 },
-    plane: "zoe",
+    plane: "mission",
     tools: ["pokemontcg.io", "SerpAPI", "ElevenLabs", "Whisper", "Ideogram", "DALL-E-3"],
     estimatedLatency: { video_script_generation: "3-5min", hook_writing: "<1min" },
   },
@@ -195,7 +197,7 @@ const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
       content_creation: 0.3,
     },
     currentLoad: { queued: 0, maxCapacity: 10 },
-    plane: "zoe",
+    plane: "mission",
     tools: ["SerpAPI", "Apollo.io", "GoogleBusinessProfile", "GoogleMaps", "Playwright"],
     estimatedLatency: { lead_qualification: "2-5min", outreach_drafting: "<2min" },
   },
@@ -211,7 +213,7 @@ const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
       script_generation: 0.2,
     },
     currentLoad: { queued: 0, maxCapacity: 20 },
-    plane: "zoe",
+    plane: "mission",
     tools: ["CoinGecko", "Finnhub", "pokemontcg.io", "X-API", "Reddit"],
     estimatedLatency: { market_monitoring: "<30s", price_analysis: "<1min" },
   },
@@ -227,7 +229,7 @@ const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
       lead_qualification: 0.2,
     },
     currentLoad: { queued: 0, maxCapacity: 15 },
-    plane: "zoe",
+    plane: "mission",
     tools: ["Perplexity", "arXiv", "X-API", "Reddit", "Tavily"],
     estimatedLatency: { research_synthesis: "2-5min", weekly_digest: "5-10min" },
   },
@@ -243,7 +245,7 @@ const DEFAULT_CAPABILITY_CARDS: Record<string, AgentCapabilityCard> = {
       architecture: 0.85,
     },
     currentLoad: { queued: 0, maxCapacity: 5 },
-    plane: "codex",
+    plane: "build",
     tools: ["TypeScript", "Vitest", "ESLint", "Git", "npm"],
     estimatedLatency: { code_generation: "1-3min", test_writing: "<2min" },
   },
@@ -451,7 +453,7 @@ export interface SpawnPackage {
   context: string; // Selective context (not full history)
   subtask: AgentTask; // The specific task to execute
   tools: string[]; // Minimum tools required (YAGNI)
-  plane: "zoe" | "codex"; // Inherits parent's plane — never escalate
+  plane: "mission" | "build"; // Inherits parent's plane — never escalate
   timeLimit: string; // '30m', '2h' — ephemeral children only
   tokenBudget: number; // 5K (task-agent) — tight budget
 }
